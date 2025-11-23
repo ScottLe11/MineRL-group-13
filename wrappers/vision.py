@@ -2,6 +2,10 @@ import gym, cv2, numpy as np
 from collections import deque
 
 class StackAndProcessWrapper(gym.Wrapper):
+    """ 
+    This wrapper preprocesses the environment's visual observations by resizing and converting frames to 
+    grayscale, then stacking the four most recent frames to provide the agent with context and motion cues.
+    """
     def __init__(self, env, shape=(84, 84)):
         super().__init__(env)
         self.shape = shape
@@ -45,6 +49,10 @@ class StackAndProcessWrapper(gym.Wrapper):
         if self.last_full_obs is not None:
             cv2.imshow("MineRL Render", self.last_full_obs[:, :, ::-1])
             cv2.waitKey(1)
+
+    def get_last_full_frame(self):
+        """Expose the latest color frame for external UIs (e.g., pygame)."""
+        return self.last_full_obs
 
     def close(self):
         """Closes the base env and our custom render window."""

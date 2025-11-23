@@ -1,10 +1,9 @@
-# main.py
 import gym
 from gym.envs.registration import register
+import numpy as np
 
 from treechop_spec import Treechop, handlers
-from wrappers import StackAndProcessWrapper
-
+from wrappers import StackAndProcessWrapper, SimpleActionWrapper, HoldAttackWrapper
 
 # Define custom class, inheriting from 'treechop_spec'
 class custom_treechop(Treechop):
@@ -17,29 +16,10 @@ class custom_treechop(Treechop):
         base_handlers = super().create_agent_start()
         base_handlers.append(
             handlers.AgentStartNear([
-                dict(type="log", distance=3)
+                dict(type="log", distance=5)
             ])
         )
         return base_handlers
-
-    def create_observation_space_handlers(self) -> list:
-        base_handlers = super().create_observation_space_handlers()
-        base_handlers.append(
-            handlers.EquippedItemObservation(
-                ['air', 'log', 'iron_axe', 'crafting_table', 'other'],
-                mainhand=True, offhand=False, armor=False
-            )
-        )
-        return base_handlers
-
-    def create_rewardables(self) -> list:
-        return [
-            handlers.RewardForCollectingItems([
-                dict(type="log", amount=1, reward=1.0),
-                dict(type="crafting_table", amount=1, reward=10.0)
-            ])
-        ]
-
 
 def make_fist_treechop_env():
     spec = custom_treechop(resolution=(640, 360))
@@ -49,7 +29,7 @@ def make_fist_treechop_env():
 register(
     id='MineRLcustom_treechop-v0',
     entry_point=make_fist_treechop_env,
-    max_episode_steps=400
+    max_episode_steps=1510
 )
 
 
@@ -57,23 +37,60 @@ if __name__ == "__main__":
     print("Creating environment...")
     base_env = gym.make('MineRLcustom_treechop-v0')
 
-    env = StackAndProcessWrapper(base_env)
+    env_vision = StackAndProcessWrapper(base_env)
+    env_hold   = HoldAttackWrapper(
+        env_vision,
+        hold_steps=35,       
+        lock_aim=True,      
+        pass_through_move=False,  
+        yaw_per_tick=0.0,    
+        fwd_jump_ticks=0      
+    )
+    env = SimpleActionWrapper(env_hold)
 
     print("Resetting the environment...")
     obs = env.reset()
 
-    print("Testing for 400 steps (20 seconds)...")
+    print("Testing for 1510 steps (60 seconds)...")
     done = False
     step_count = 0
+    NUM_ACTIONS = env.action_space.n
+    # Test prob distribution of original 7-action 
+    BASE = [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]  
 
-    while not done:
-        action = env.action_space.no_op()
-        action['forward'] = 1
-        if step_count % 10 == 0:
-            action['attack'] = 1
+    if NUM_ACTIONS == 7:
+        FIXED_PROBABILITIES = BASE
+    elif NUM_ACTIONS == 8:
+        P_MACRO = 1.00  
+        if P_MACRO >= 1.0:
+            probs = [0.0] * len(BASE)
+        else:
+            scale = (1.0 - P_MACRO) / sum(BASE)      
+            probs = [p * scale for p in BASE]    
+        macro_idx = getattr(env, "PIPELINE", 6)  
+        probs.insert(macro_idx, P_MACRO)          
+        FIXED_PROBABILITIES = probs
+    else:
+        # even prob distriution
+        FIXED_PROBABILITIES = [1.0 / NUM_ACTIONS] * NUM_ACTIONS
+    
+    try:
+        while True: 
+            # The human provides the action, which the wrapper chain processes.
+            # We must use env.action_space.sample() to get a valid discrete action index (0-5)
+            # that is then immediately replaced by the human input coming from the interactor.
+            action = np.random.choice(range(NUM_ACTIONS), p=FIXED_PROBABILITIES)
+            env.render()
+            # The wrapped environment's step function handles the human input and recording
+            obs, reward, done, info = env.step(action)
+            
+            if done:
+                print(f"\nEpisode ended. Total Reward: {reward}")
+                # Resetting triggers the save of the last episode
+                obs = env.reset() # Keep the loop running for the next episode
 
-        env.render()
-        obs, reward, done, _ = env.step(action)
-        step_count += 1
+    except KeyboardInterrupt:
+        print("\nInterrupt received. Saving final trajectory and closing.")
 
-    env.close()
+    finally:
+        env.close()

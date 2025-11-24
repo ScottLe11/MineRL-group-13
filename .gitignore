@@ -1,0 +1,7 @@
+__pycache__/
+*.so
+*.log
+*.pid
+venv/
+3.9venv/
+venvNew/

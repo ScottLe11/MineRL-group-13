@@ -1,6 +1,7 @@
 import gym
 from gym.envs.registration import register
 import numpy as np
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from treechop_spec import Treechop, handlers
 from wrappers import StackAndProcessWrapper, SimpleActionWrapper, HoldAttackWrapper
@@ -32,22 +33,36 @@ register(
     max_episode_steps=1510
 )
 
-
-if __name__ == "__main__":
-    print("Creating environment...")
+def make_single_wrapped_env():
+    # This function should contain all the steps from your main.py
     base_env = gym.make('MineRLcustom_treechop-v0')
-
     env_vision = StackAndProcessWrapper(base_env)
     env_hold   = HoldAttackWrapper(
         env_vision,
-        hold_steps=35,       
-        lock_aim=True,      
-        pass_through_move=False,  
-        yaw_per_tick=0.0,    
-        fwd_jump_ticks=0      
+        hold_steps=35, lock_aim=True,
+        pass_through_move=False, yaw_per_tick=0.0, fwd_jump_ticks=0
     )
+    # Assuming SimpleActionWrapper is the final wrapper before the agent sees it
     env = SimpleActionWrapper(env_hold)
+    return env
 
+
+if __name__ == "__main__":
+    print("Creating environment...")
+    # base_env = gym.make('MineRLcustom_treechop-v0')
+
+    # env_vision = StackAndProcessWrapper(base_env)
+    # env_hold   = HoldAttackWrapper(
+    #     env_vision,
+    #     hold_steps=35,       
+    #     lock_aim=True,      
+    #     pass_through_move=False,  
+    #     yaw_per_tick=0.0,    
+    #     fwd_jump_ticks=0      
+    # )
+    # env = SimpleActionWrapper(env_hold)
+    NUM_ENVS = 6
+    env = SubprocVecEnv([make_single_wrapped_env] * NUM_ENVS)
     print("Resetting the environment...")
     obs = env.reset()
 
@@ -79,15 +94,17 @@ if __name__ == "__main__":
             # The human provides the action, which the wrapper chain processes.
             # We must use env.action_space.sample() to get a valid discrete action index (0-5)
             # that is then immediately replaced by the human input coming from the interactor.
-            action = np.random.choice(range(NUM_ACTIONS), p=FIXED_PROBABILITIES)
+            action = np.random.choice(range(NUM_ACTIONS),size=NUM_ENVS, p=FIXED_PROBABILITIES)
             env.render()
             # The wrapped environment's step function handles the human input and recording
             obs, reward, done, info = env.step(action)
             
-            if done:
-                print(f"\nEpisode ended. Total Reward: {reward}")
-                # Resetting triggers the save of the last episode
-                obs = env.reset() # Keep the loop running for the next episode
+            if done.any():
+            # Iterate over the done array to find which envs finished
+                for i, d in enumerate(done):
+                    if d:
+                        # Note: reward and info are also arrays/lists
+                        print(f"\nEnvironment {i} ended. Total Reward: {reward[i]}")
 
     except KeyboardInterrupt:
         print("\nInterrupt received. Saving final trajectory and closing.")

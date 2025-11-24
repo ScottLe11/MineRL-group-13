@@ -61,53 +61,71 @@ if __name__ == "__main__":
     #     fwd_jump_ticks=0      
     # )
     # env = SimpleActionWrapper(env_hold)
+   
+   
     NUM_ENVS = 6
     env = SubprocVecEnv([make_single_wrapped_env] * NUM_ENVS)
-    print("Resetting the environment...")
-    obs = env.reset()
 
-    print("Testing for 1510 steps (60 seconds)...")
-    done = False
-    step_count = 0
-    NUM_ACTIONS = env.action_space.n
-    # Test prob distribution of original 7-action 
-    BASE = [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]  
+    ### Start of Algo Slotting
 
-    if NUM_ACTIONS == 7:
-        FIXED_PROBABILITIES = BASE
-    elif NUM_ACTIONS == 8:
-        P_MACRO = 1.00  
-        if P_MACRO >= 1.0:
-            probs = [0.0] * len(BASE)
-        else:
-            scale = (1.0 - P_MACRO) / sum(BASE)      
-            probs = [p * scale for p in BASE]    
-        macro_idx = getattr(env, "PIPELINE", 6)  
-        probs.insert(macro_idx, P_MACRO)          
-        FIXED_PROBABILITIES = probs
-    else:
-        # even prob distriution
-        FIXED_PROBABILITIES = [1.0 / NUM_ACTIONS] * NUM_ACTIONS
+    ## hyperparameters = {}
+
+    ## model = PPO()
+
+    ## model.learn()
+
+    ## model.save()
+
+    env.close()
+    print("Training finished and environment closed.")
+
+
+    ### This is prev fixed prob action space 
+    # print("Resetting the environment...")
+    # obs = env.reset()
+
+    # print("Testing for 1510 steps (60 seconds)...")
+    # done = False
+    # step_count = 0
+    # NUM_ACTIONS = env.action_space.n
+    # # Test prob distribution of original 7-action 
+    # BASE = [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]  
+
+    # if NUM_ACTIONS == 7:
+    #     FIXED_PROBABILITIES = BASE
+    # elif NUM_ACTIONS == 8:
+    #     P_MACRO = 1.00  
+    #     if P_MACRO >= 1.0:
+    #         probs = [0.0] * len(BASE)
+    #     else:
+    #         scale = (1.0 - P_MACRO) / sum(BASE)      
+    #         probs = [p * scale for p in BASE]    
+    #     macro_idx = getattr(env, "PIPELINE", 6)  
+    #     probs.insert(macro_idx, P_MACRO)          
+    #     FIXED_PROBABILITIES = probs
+    # else:
+    #     # even prob distriution
+    #     FIXED_PROBABILITIES = [1.0 / NUM_ACTIONS] * NUM_ACTIONS
     
-    try:
-        while True: 
-            # The human provides the action, which the wrapper chain processes.
-            # We must use env.action_space.sample() to get a valid discrete action index (0-5)
-            # that is then immediately replaced by the human input coming from the interactor.
-            action = np.random.choice(range(NUM_ACTIONS),size=NUM_ENVS, p=FIXED_PROBABILITIES)
-            env.render()
-            # The wrapped environment's step function handles the human input and recording
-            obs, reward, done, info = env.step(action)
+    # try:
+    #     while True: 
+    #         # The human provides the action, which the wrapper chain processes.
+    #         # We must use env.action_space.sample() to get a valid discrete action index (0-5)
+    #         # that is then immediately replaced by the human input coming from the interactor.
+    #         action = np.random.choice(range(NUM_ACTIONS),size=NUM_ENVS, p=FIXED_PROBABILITIES)
+    #         env.render()
+    #         # The wrapped environment's step function handles the human input and recording
+    #         obs, reward, done, info = env.step(action)
             
-            if done.any():
-            # Iterate over the done array to find which envs finished
-                for i, d in enumerate(done):
-                    if d:
-                        # Note: reward and info are also arrays/lists
-                        print(f"\nEnvironment {i} ended. Total Reward: {reward[i]}")
+    #         if done.any():
+    #         # Iterate over the done array to find which envs finished
+    #             for i, d in enumerate(done):
+    #                 if d:
+    #                     # Note: reward and info are also arrays/lists
+    #                     print(f"\nEnvironment {i} ended. Total Reward: {reward[i]}")
 
-    except KeyboardInterrupt:
-        print("\nInterrupt received. Saving final trajectory and closing.")
+    # except KeyboardInterrupt:
+    #     print("\nInterrupt received. Saving final trajectory and closing.")
 
-    finally:
-        env.close()
+    # finally:
+    #     env.close()

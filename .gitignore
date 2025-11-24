@@ -5,3 +5,4 @@ __pycache__/
 venv/
 3.9venv/
 venvNew/
+expert_trajectory/

@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+.python-version
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.claude/
+
+# Gradle (for MineRL builds)
+.gradle/
+gradle/
+gradlew
+gradlew.bat
+*.jar
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Machine Learning / Training
+checkpoints/
+saved_models/
+models/
+*.pth
+*.pt
+*.ckpt
+logs/
+runs/
+tensorboard/
+wandb/
+
+# Data
+data/
+datasets/
+*.h5
+*.hdf5
+*.csv
+*.pkl
+*.pickle
+
+# MineRL specific
+.minerl/
+minerl_data/
+*.demo
+trajectories/
+recordings/
+
+# Environment files
+.env
+*.env
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.swp
+*.swo
+
+# OS specific
+Thumbs.db
+.DS_Store

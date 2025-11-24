@@ -1,84 +1,62 @@
 # MineRL Tree-Chopping DQN Agent - Requirements
-# Python 3.8 Compatible
+# Python 3.10 Compatible
 # Last Updated: 2025-11-24
 
 # ============================================================================
-# CORE DEPENDENCIES (Required for basic functionality)
+# CORE DEPENDENCIES
 # ============================================================================
 
-# MineRL Environment (from Q4 - version 1.0)
-minerl==1.0.0
+# MineRL Environment v1.0.2 (Aug 2023 release with gym fix)
+# Install from GitHub: pip install git+https://github.com/minerllabs/minerl@v1.0.2
 
-# Gym (compatible with MineRL 1.0)
-gym==0.19.0
 
-# NumPy (pin for compatibility)
-numpy>=1.19.0,<1.24.0  # 1.24+ requires Python 3.9+
+# Gym - v1.0.2 fixed compatibility with newer gym
+gym>=0.21.0
+
+# NumPy
+numpy>=1.21.0
 
 # ============================================================================
 # DEEP LEARNING (PyTorch)
 # ============================================================================
 
-# PyTorch (compatible with Python 3.8)
-torch>=1.10.0,<2.0.0
-torchvision>=0.11.0,<0.15.0
+# PyTorch 2.x works great with Python 3.10
+torch>=2.0.0
+torchvision>=0.15.0
 
 # ============================================================================
 # IMAGE PROCESSING
 # ============================================================================
 
-# OpenCV
-opencv-python>=4.5.0,<5.0.0
-
-# Pillow (for image handling)
-Pillow>=8.0.0,<10.0.0
+opencv-python>=4.5.0
+Pillow>=9.0.0
 
 # ============================================================================
 # CONFIGURATION & UTILITIES
 # ============================================================================
 
-# YAML config files
-PyYAML>=5.4.0,<7.0.0
-
-# System monitoring
-psutil>=5.8.0,<6.0.0
+PyYAML>=6.0.0
+psutil>=5.9.0
 
 # ============================================================================
 # LOGGING & MONITORING
 # ============================================================================
 
-# TensorBoard
-tensorboard>=2.8.0,<3.0.0
-
-# TensorBoard data reader (optional but useful)
-tensorboard-data-server>=0.6.0
+tensorboard>=2.10.0
 
 # ============================================================================
 # TESTING
 # ============================================================================
 
-# Testing framework
-pytest>=6.2.0,<8.0.0
-pytest-cov>=2.12.0,<5.0.0
+pytest>=7.0.0
+pytest-cov>=4.0.0
 
 # ============================================================================
-# VISUALIZATION (Optional but recommended)
+# VISUALIZATION (Optional)
 # ============================================================================
 
-# Plotting
-matplotlib>=3.3.0,<4.0.0
-seaborn>=0.11.0,<0.13.0
-
-# ============================================================================
-# DEVELOPMENT TOOLS (Optional)
-# ============================================================================
-
-# Code formatting (optional)
-# black>=21.0
-# flake8>=3.9.0
-
-# Type checking (optional)
-# mypy>=0.910
+matplotlib>=3.5.0
+seaborn>=0.12.0
 
 # ============================================================================
 # NOTES
@@ -87,22 +65,20 @@ seaborn>=0.11.0,<0.13.0
 # Installation:
 #   pip install -r requirements.txt
 #
-# For CUDA support (recommended for training):
-#   - If using NVIDIA GPU, install PyTorch with CUDA from:
-#     https://pytorch.org/get-started/locally/
-#   - Example for CUDA 11.3:
-#     pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 -f https://download.pytorch.org/whl/torch_stable.html
+# If minerl 1.0.2 isn't on PyPI, install from GitHub:
+#   pip install git+https://github.com/minerllabs/minerl@v1.0.2
 #
-# For M1 Mac (MPS support):
-#   - PyTorch 1.12+ has MPS support for M1 Macs
-#   - pip install torch torchvision (will auto-detect MPS)
+# For CUDA support (recommended for training):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# For M1/M2 Mac (MPS support):
+#   pip install torch torchvision (MPS auto-detected)
 #
 # Verify installation:
 #   python -c "import minerl, torch, gym; print('✅ All core packages installed')"
 #
 # Troubleshooting:
-#   - If MineRL install fails, you may need Java 8 installed
-#   - MineRL requires Minecraft 1.16.5 which will auto-download
+#   - MineRL requires Java JDK 8: https://github.com/minerllabs/minerl/tree/v1.0.2
 #   - On Mac: brew install openjdk@8
 #   - On Ubuntu: sudo apt install openjdk-8-jdk
 

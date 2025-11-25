@@ -1,0 +1,80 @@
+# MineRL Tree-Chopping DQN Agent Configuration
+# Single config file for all hyperparameters
+
+# =============================================================================
+# ENVIRONMENT
+# =============================================================================
+environment:
+  name: "MineRLcustom_treechop-v0"
+  max_steps: 8000                    # Max steps per episode
+  frame_shape: [64, 64]              # Grayscale frame size
+  frame_stack: 4                     # Number of stacked frames
+
+# =============================================================================
+# NETWORK
+# =============================================================================
+network:
+  input_channels: 4                  # Frame stack size
+  cnn_features: 512                  # CNN output features
+  
+# =============================================================================
+# DQN AGENT
+# =============================================================================
+dqn:
+  num_actions: 23                    # Total discrete actions
+  
+  # Learning
+  learning_rate: 0.0001              # Adam learning rate
+  gamma: 0.99                        # Discount factor
+  batch_size: 32                     # Training batch size
+  gradient_clip: 10.0                # Max gradient norm
+  
+  # Replay Buffer
+  replay_buffer:
+    capacity: 100000                 # Buffer size (experiences)
+    min_size: 10000                  # Min experiences before training
+  
+  # Exploration (epsilon-greedy)
+  exploration:
+    epsilon_start: 1.0               # Starting epsilon
+    epsilon_end: 0.1                 # Final epsilon
+    epsilon_decay_steps: 100000      # Steps for linear decay
+  
+  # Target Network
+  target_update:
+    method: "soft"                   # "soft" or "hard"
+    tau: 0.005                       # Soft update coefficient
+    hard_update_freq: 1000           # Steps between hard updates (if hard)
+
+# =============================================================================
+# TRAINING
+# =============================================================================
+training:
+  total_steps: 1000000               # Total environment steps
+  train_freq: 4                      # Train every N steps
+  
+  # Logging
+  log_freq: 1000                     # Log metrics every N steps
+  save_freq: 50000                   # Save checkpoint every N steps
+  eval_freq: 25000                   # Evaluate every N steps
+  eval_episodes: 5                   # Episodes per evaluation
+  
+  # Paths
+  checkpoint_dir: "checkpoints"
+  log_dir: "runs"
+
+# =============================================================================
+# REWARD SHAPING
+# =============================================================================
+rewards:
+  wood_collected: 1.0                # Reward per wood collected
+  step_penalty: -0.001               # Penalty per step
+  # Note: No crafting rewards per design decision
+
+# =============================================================================
+# HARDWARE
+# =============================================================================
+device: "auto"                       # "cpu", "cuda", "mps", or "auto"
+seed: 42                             # Random seed (null for random)
+
+

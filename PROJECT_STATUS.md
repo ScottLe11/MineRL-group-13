@@ -13,7 +13,7 @@
 | Core PPO Agent | ✅ Complete | 100% |
 | Environment Wrappers | ✅ Complete | 100% |
 | Network Architecture (Base) | ✅ Complete | 100% |
-| Training Infrastructure | ✅ Complete | 90% |
+| Training Infrastructure | ✅ Complete | 95% |
 | Testing | ✅ Complete | 85% |
 | Phase 1: Recon Support | 🟡 Partial | 40% |
 | Phase 2-3: Distributed | ❌ Not Started | 0% |
@@ -214,6 +214,20 @@
 1. `train.py` now properly unpacks config dict into DQNAgent constructor args
 2. Fixed `select_action(obs, global_step)` → `select_action(obs, explore=True)`
 3. Fixed `agent.epsilon_schedule.get_epsilon()` → `agent.get_epsilon()`
+
+### ~~Bug 3: Training Loop Used Steps Instead of Episodes~~ ✅ FIXED (2025-11-25)
+**Status**: RESOLVED
+
+**Problem**: `train.py` was configured to run for 1,000,000 steps (insane), logging/saving was step-based, and the episode duration wasn't used properly.
+
+**Fixed issues**:
+1. Training now runs for `num_episodes` (default 200 for recon)
+2. Logging/saving is episode-based (every 10/50 episodes)
+3. `config.yaml` now uses sensible defaults:
+   - `episode_seconds: 60` and `max_steps: 300` (5 Hz × 60s)
+   - `epsilon_decay_steps: 50000` (fits within recon budget)
+4. Added success rate tracking and best model saving
+5. Episode timing: 1 agent step = 4 frames = 200ms (configurable in wrappers)
 
 ---
 

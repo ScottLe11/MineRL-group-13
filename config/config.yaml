@@ -6,9 +6,23 @@
 # =============================================================================
 environment:
   name: "MineRLcustom_treechop-v0"
-  max_steps: 8000                    # Max steps per episode
+  
+  # Episode length
+  # - Each agent step = 4 frames = 200ms = 0.2 seconds
+  # - So 1 second = 5 agent steps
+  # - Recon: 20 seconds, Full: 60 seconds
+  episode_seconds: 20                # Episode duration (20s recon, 60s full)
+  # max_steps is computed: episode_seconds * 5
+  
+  # Visual processing
   frame_shape: [84, 84]              # Grayscale frame size (matches Atari standard)
   frame_stack: 4                     # Number of stacked frames
+  
+  # Curriculum (starting conditions) - see config/CURRICULUM_LEARNING.md
+  curriculum:
+    spawn_type: "random"             # "random" or "near_tree" (near_tree needs custom handler)
+    with_logs: 8                     # Number of starting logs (0-10)
+    with_axe: true                  # Start with wooden axe equipped
 
 # =============================================================================
 # NETWORK
@@ -35,10 +49,13 @@ dqn:
     min_size: 10000                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
+  # NOTE: decay_steps is in AGENT STEPS, not episodes
+  # - Recon (200 eps × 300 steps = 60k): use 50000 for full decay
+  # - Full (1000 eps × 300 steps = 300k): use 250000 for gradual decay
   exploration:
     epsilon_start: 1.0               # Starting epsilon
-    epsilon_end: 0.1                 # Final epsilon
-    epsilon_decay_steps: 100000      # Steps for linear decay
+    epsilon_end: 0.05                 # Final epsilon
+    epsilon_decay_steps: 50000       # Steps for linear decay
   
   # Target Network
   target_update:
@@ -50,13 +67,16 @@ dqn:
 # TRAINING
 # =============================================================================
 training:
-  total_steps: 1000000               # Total environment steps
-  train_freq: 4                      # Train every N steps
+  # Training duration (in EPISODES, not steps)
+  # - Recon phase: 200 episodes (quick hyperparameter search)
+  # - Full training: 1000-3000 episodes
+  num_episodes: 200                  # Total episodes to train
+  train_freq: 4                      # Train every N agent steps
   
-  # Logging
-  log_freq: 1000                     # Log metrics every N steps
-  save_freq: 50000                   # Save checkpoint every N steps
-  eval_freq: 25000                   # Evaluate every N steps
+  # Logging & Saving (in episodes)
+  log_freq: 10                       # Log metrics every N episodes
+  save_freq: 50                      # Save checkpoint every N episodes
+  eval_freq: 50                      # Evaluate every N episodes
   eval_episodes: 5                   # Episodes per evaluation
   
   # Paths
@@ -94,6 +114,6 @@ rewards:
 # HARDWARE
 # =============================================================================
 device: "auto"                       # "cpu", "cuda", "mps", or "auto"
-seed: 42                             # Random seed (null for random)
+seed: null                           # Random seed (null for random)
 
 

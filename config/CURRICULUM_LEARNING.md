@@ -31,7 +31,7 @@ Starting conditions are controlled by **3 independent switches** that can be com
 | `random` | Default forest biome spawn | ✅ Default behavior |
 | `near_tree` | Spawn 5-15 blocks from tree, facing it | ❌ Needs custom handler |
 
-**Note**: `near_tree` requires a custom MineRL handler that finds nearest log block and teleports player. For now, use `random` - forest biome (fixedBiome=4) naturally has many trees.
+**Note**: `near_tree` requires a custom MineRL handler that finds nearest log block and teleports player. For now, use `random` - forest biome (fixedBiome=11) naturally has many trees.
 
 ### 2. `with_logs`: Starting Log Count
 

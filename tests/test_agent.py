@@ -107,46 +107,29 @@ class TestEpsilonSchedule:
 class TestDQNAgent:
     """Tests for the DQN agent."""
     
-    @pytest.fixture
-    def agent_config(self):
-        """Create a minimal config for testing."""
-        return {
-            'device': 'cpu',
-            'network': {
-                'input_channels': 4,
-            },
-            'dqn': {
-                'num_actions': 8,
-                'learning_rate': 0.001,
-                'batch_size': 4,
-                'gamma': 0.99,
-                'replay_buffer': {
-                    'capacity': 100,
-                    'min_size': 10,
-                },
-                'exploration': {
-                    'epsilon_start': 1.0,
-                    'epsilon_end': 0.1,
-                    'epsilon_decay_steps': 100,
-                },
-                'gradient_clip': 1.0,
-                'target_update': {
-                    'tau': 0.005,
-                }
-            }
-        }
-    
-    def test_agent_initialization(self, agent_config):
+    def test_agent_initialization(self):
         """Agent should initialize correctly."""
-        agent = DQNAgent(agent_config)
+        agent = DQNAgent(
+            num_actions=8,
+            buffer_capacity=100,
+            buffer_min_size=10,
+            batch_size=4,
+            device='cpu'
+        )
         
         assert agent.q_network is not None
         assert agent.target_network is not None
         assert agent.replay_buffer is not None
     
-    def test_action_selection_exploration(self, agent_config):
+    def test_action_selection_exploration(self):
         """Agent should explore at high epsilon."""
-        agent = DQNAgent(agent_config)
+        agent = DQNAgent(
+            num_actions=8,
+            epsilon_start=1.0,
+            buffer_capacity=100,
+            buffer_min_size=10,
+            device='cpu'
+        )
         
         obs = {
             'pov': np.zeros((4, 64, 64), dtype=np.uint8),
@@ -155,16 +138,21 @@ class TestDQNAgent:
             'pitch': 0.0,
         }
         
-        # At step 0, epsilon=1.0, should always explore
-        actions = [agent.select_action(obs, current_step=0) for _ in range(100)]
+        # With epsilon=1.0 at start, should always explore
+        actions = [agent.select_action(obs, explore=True) for _ in range(100)]
         unique_actions = set(actions)
         
         # Should see multiple different actions due to random exploration
         assert len(unique_actions) > 1, "Should explore different actions"
     
-    def test_experience_storage(self, agent_config):
+    def test_experience_storage(self):
         """Agent should store experiences in replay buffer."""
-        agent = DQNAgent(agent_config)
+        agent = DQNAgent(
+            num_actions=8,
+            buffer_capacity=100,
+            buffer_min_size=10,
+            device='cpu'
+        )
         
         state = {'pov': np.zeros((4, 64, 64)), 'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
         next_state = {'pov': np.zeros((4, 64, 64)), 'time': 0.9, 'yaw': 0.0, 'pitch': 0.0}
@@ -173,11 +161,17 @@ class TestDQNAgent:
         
         assert len(agent.replay_buffer) == 1
     
-    def test_training_step(self, agent_config):
+    def test_training_step(self):
         """Agent should perform training step when buffer is ready."""
-        agent = DQNAgent(agent_config)
+        agent = DQNAgent(
+            num_actions=8,
+            buffer_capacity=100,
+            buffer_min_size=10,
+            batch_size=4,
+            device='cpu'
+        )
         
-        # Fill buffer
+        # Fill buffer beyond min_size
         for i in range(15):
             state = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8), 
                      'time': 1.0 - i*0.01, 'yaw': 0.0, 'pitch': 0.0}
@@ -188,22 +182,28 @@ class TestDQNAgent:
         # Training step should return metrics
         metrics = agent.train_step()
         
+        assert metrics is not None
         assert 'loss' in metrics
         assert 'q_mean' in metrics
         assert metrics['loss'] >= 0
     
-    def test_no_training_when_buffer_not_ready(self, agent_config):
+    def test_no_training_when_buffer_not_ready(self):
         """Agent should not train when buffer has insufficient experiences."""
-        agent = DQNAgent(agent_config)
+        agent = DQNAgent(
+            num_actions=8,
+            buffer_capacity=100,
+            buffer_min_size=10,
+            device='cpu'
+        )
         
-        # Add only a few experiences
+        # Add only a few experiences (less than min_size)
         for i in range(5):
             state = {'pov': np.zeros((4, 64, 64)), 'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
             agent.store_experience(state, action=0, reward=0, next_state=state, done=False)
         
         metrics = agent.train_step()
         
-        assert metrics == {}  # Empty dict when buffer not ready
+        assert metrics is None  # None when buffer not ready
 
 
 class TestAgentIntegration:
@@ -211,22 +211,16 @@ class TestAgentIntegration:
     
     def test_full_episode_simulation(self):
         """Simulate a full episode with the agent."""
-        config = {
-            'device': 'cpu',
-            'network': {'input_channels': 4},
-            'dqn': {
-                'num_actions': 8,
-                'learning_rate': 0.001,
-                'batch_size': 4,
-                'gamma': 0.99,
-                'replay_buffer': {'capacity': 100, 'min_size': 10},
-                'exploration': {'epsilon_start': 1.0, 'epsilon_end': 0.1, 'epsilon_decay_steps': 50},
-                'gradient_clip': 1.0,
-                'target_update': {'tau': 0.005}
-            }
-        }
-        
-        agent = DQNAgent(config)
+        agent = DQNAgent(
+            num_actions=8,
+            buffer_capacity=100,
+            buffer_min_size=10,
+            batch_size=4,
+            epsilon_start=1.0,
+            epsilon_end=0.1,
+            epsilon_decay_steps=50,
+            device='cpu'
+        )
         
         # Simulate episode
         obs = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
@@ -234,7 +228,7 @@ class TestAgentIntegration:
         
         total_reward = 0
         for step in range(50):
-            action = agent.select_action(obs, current_step=step)
+            action = agent.select_action(obs, explore=True)
             
             # Simulate environment response
             next_obs = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
@@ -247,7 +241,7 @@ class TestAgentIntegration:
             # Try training
             if agent.replay_buffer.is_ready():
                 metrics = agent.train_step()
-                assert metrics != {}  # Should get metrics when buffer is ready
+                assert metrics is not None  # Should get metrics when buffer is ready
             
             obs = next_obs
             total_reward += reward

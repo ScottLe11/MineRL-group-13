@@ -74,8 +74,11 @@ class ReplayBuffer:
             Each is a list of batch_size items
         
         Raises:
-            ValueError: If buffer doesn't have enough experiences
+            ValueError: If buffer is not ready (hasn't reached min_size)
         """
+        if not self.is_ready():
+            raise ValueError(f"Replay buffer not ready: {len(self.buffer)} < min_size {self.min_size}")
+        
         if len(self.buffer) < batch_size:
             raise ValueError(f"Buffer size {len(self.buffer)} < batch_size {batch_size}")
         

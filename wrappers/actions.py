@@ -1,12 +1,17 @@
 """
-Extended Action Wrapper for the MineRL Tree-Chopping DQN Agent.
+Extended Action Wrapper for the MineRL Tree-Chopping RL Agent.
 
 Provides 23 discrete actions:
-- 0-6: Primitive actions (noop, forward, back, right, left, jump, attack)
-- 7-18: Camera actions (turn left/right at various angles, look up/down)
+- 0-6: Movement primitives (noop, forward, back, right, left, jump, attack)
+- 7-18: Camera primitives (turn left/right at various angles, look up/down)
 - 19-22: Crafting macros (planks, make_table, sticks, axe)
 
+All primitives (0-18) work identically: execute for 4 frames, accumulate rewards.
+The only difference is the action dict content (movement vs camera deltas).
+
 Each action corresponds to one agent "step" which equals 4 MineRL frames (200ms).
+
+Designed to work with both DQN and PPO policies.
 """
 
 import gym
@@ -28,8 +33,8 @@ from crafting import (
 # ACTION DEFINITIONS
 # =============================================================================
 
-# Primitive actions (executed for 4 frames each)
-PRIMITIVE_ACTIONS = [
+# Movement primitives (0-6): executed for 4 frames each
+MOVEMENT_PRIMITIVES = [
     {},               # 0: noop
     {'forward': 1},   # 1: forward
     {'back': 1},      # 2: back
@@ -39,9 +44,9 @@ PRIMITIVE_ACTIONS = [
     {'attack': 1},    # 6: attack
 ]
 
-# Camera actions: (yaw_delta, pitch_delta) per frame, executed for 4 frames
-# Total rotation = delta * 4 frames
-CAMERA_ACTIONS = [
+# Camera primitives (7-18): (yaw_delta, pitch_delta) per frame × 4 frames
+# These are ALSO primitives - they just modify camera instead of movement
+CAMERA_PRIMITIVES = [
     # Turn left (negative yaw)
     (-7.5, 0),    # 7: turn_left_30  (7.5 * 4 = 30°)
     (-11.25, 0),  # 8: turn_left_45  (11.25 * 4 = 45°)
@@ -59,6 +64,15 @@ CAMERA_ACTIONS = [
     (0, 3.0),     # 17: look_down_12
     (0, 5.0),     # 18: look_down_20
 ]
+
+# Combined primitives for easy indexing
+NUM_MOVEMENT_PRIMITIVES = len(MOVEMENT_PRIMITIVES)  # 7
+NUM_CAMERA_PRIMITIVES = len(CAMERA_PRIMITIVES)      # 12
+NUM_PRIMITIVES = NUM_MOVEMENT_PRIMITIVES + NUM_CAMERA_PRIMITIVES  # 19
+
+# Legacy alias for backward compatibility
+PRIMITIVE_ACTIONS = MOVEMENT_PRIMITIVES
+CAMERA_ACTIONS = CAMERA_PRIMITIVES
 
 # Macro action indices
 MACRO_CRAFT_PLANKS = 19
@@ -369,8 +383,12 @@ def get_action_space_info() -> dict:
     return {
         'num_actions': NUM_ACTIONS,
         'frames_per_action': FRAMES_PER_ACTION,
-        'primitives': list(range(len(PRIMITIVE_ACTIONS))),
-        'camera': list(range(len(PRIMITIVE_ACTIONS), len(PRIMITIVE_ACTIONS) + len(CAMERA_ACTIONS))),
+        # All primitives (both movement and camera)
+        'primitives': list(range(NUM_PRIMITIVES)),  # 0-18
+        # Breakdown of primitive types
+        'movement_primitives': list(range(NUM_MOVEMENT_PRIMITIVES)),  # 0-6
+        'camera_primitives': list(range(NUM_MOVEMENT_PRIMITIVES, NUM_PRIMITIVES)),  # 7-18
+        # Macros (multi-step sequences)
         'macros': [MACRO_CRAFT_PLANKS, MACRO_MAKE_TABLE, MACRO_CRAFT_STICKS, MACRO_CRAFT_AXE],
         'action_names': ACTION_NAMES,
     }

@@ -13,6 +13,41 @@ from networks import DQNNetwork
 from .replay_buffer import ReplayBuffer
 
 
+class EpsilonSchedule:
+    """
+    Linear epsilon decay schedule for exploration.
+    
+    Decays linearly from start to end over decay_steps,
+    then stays at end value.
+    """
+    
+    def __init__(self, start: float = 1.0, end: float = 0.05, decay_steps: int = 100000):
+        """
+        Args:
+            start: Initial epsilon value (typically 1.0)
+            end: Final epsilon value (e.g., 0.05 or 0.1)
+            decay_steps: Number of steps to decay from start to end
+        """
+        self.start = start
+        self.end = end
+        self.decay_steps = decay_steps
+    
+    def get_epsilon(self, step: int) -> float:
+        """
+        Get epsilon value for a given step.
+        
+        Args:
+            step: Current step count
+            
+        Returns:
+            Epsilon value between start and end
+        """
+        if step >= self.decay_steps:
+            return self.end
+        progress = step / self.decay_steps
+        return self.start + (self.end - self.start) * progress
+
+
 class DQNAgent:
     """
     Deep Q-Network agent with:

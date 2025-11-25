@@ -1,5 +1,5 @@
-# MineRL Tree-Chopping DQN Agent Configuration
-# Single config file for all hyperparameters
+# MineRL Tree-Chopping RL Agent Configuration
+# Supports both DQN and PPO algorithms
 
 # =============================================================================
 # ENVIRONMENT
@@ -62,6 +62,26 @@ training:
   # Paths
   checkpoint_dir: "checkpoints"
   log_dir: "runs"
+
+# =============================================================================
+# PPO (Alternative to DQN)
+# =============================================================================
+ppo:
+  learning_rate: 0.0003              # Typically higher than DQN
+  gamma: 0.99                        # Discount factor
+  gae_lambda: 0.95                   # GAE lambda
+  clip_epsilon: 0.2                  # PPO clipping parameter
+  entropy_coef: 0.01                 # Entropy bonus
+  value_coef: 0.5                    # Value loss coefficient
+  max_grad_norm: 0.5                 # Gradient clipping
+  n_steps: 2048                      # Steps per rollout
+  n_epochs: 10                       # Epochs per update
+  batch_size: 64                     # Minibatch size
+
+# =============================================================================
+# ALGORITHM SELECTION
+# =============================================================================
+algorithm: "dqn"                     # "dqn" or "ppo"
 
 # =============================================================================
 # REWARD SHAPING

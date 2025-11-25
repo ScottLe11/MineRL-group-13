@@ -195,19 +195,17 @@ class TestExtendedActionWrapper:
         
         assert info['num_actions'] == 23
         assert info['frames_per_action'] == 4
-        assert len(info['primitives']) == 7  # noop through attack
-        assert len(info['camera']) == 12     # 4 left + 4 right + 2 up + 2 down
-        assert len(info['macros']) == 4      # planks, make_table, sticks, axe
+        assert len(info['primitives']) == 19  # All primitives (movement + camera)
+        assert len(info['movement_primitives']) == 7  # noop through attack
+        assert len(info['camera_primitives']) == 12   # 4 left + 4 right + 2 up + 2 down
+        assert len(info['macros']) == 4       # planks, make_table, sticks, axe
     
     def test_primitive_action_indices(self):
-        """Primitive actions should be indices 0-6."""
+        """All primitive actions should be indices 0-18."""
         info = get_action_space_info()
-        assert info['primitives'] == [0, 1, 2, 3, 4, 5, 6]
-    
-    def test_camera_action_indices(self):
-        """Camera actions should be indices 7-18."""
-        info = get_action_space_info()
-        assert info['camera'] == list(range(7, 19))
+        assert info['primitives'] == list(range(19))
+        assert info['movement_primitives'] == [0, 1, 2, 3, 4, 5, 6]
+        assert info['camera_primitives'] == list(range(7, 19))
     
     def test_macro_action_indices(self):
         """Macro actions should be indices 19-22."""
@@ -222,14 +220,14 @@ class TestExtendedActionWrapper:
 class TestActionNames:
     """Tests for action naming."""
     
-    def test_primitive_names(self):
-        """Primitive action names should be correct."""
+    def test_movement_primitive_names(self):
+        """Movement primitive action names should be correct."""
         assert ACTION_NAMES[0] == 'noop'
         assert ACTION_NAMES[1] == 'forward'
         assert ACTION_NAMES[6] == 'attack'
     
-    def test_camera_names(self):
-        """Camera action names should be correct."""
+    def test_camera_primitive_names(self):
+        """Camera primitive action names should be correct."""
         assert ACTION_NAMES[7] == 'turn_left_30'
         assert ACTION_NAMES[10] == 'turn_left_90'
         assert ACTION_NAMES[11] == 'turn_right_30'

@@ -32,7 +32,7 @@ def extract_bc_data(raw_transitions):
     action_list = []
     
     for transition in raw_transitions:
-        # --- CRITICAL CHANGE HERE ---
+        
         # The 'state' is a dictionary. We extract the 'pov' key which holds the image.
         state_dict = transition['state']
         if 'pov' in state_dict:
@@ -40,7 +40,6 @@ def extract_bc_data(raw_transitions):
             obs_list.append(image_observation)
         else:
             # Handle the case where the image key might be different or missing
-            # In your MineRL setup, 'pov' is expected.
             raise ValueError("Observation dictionary is missing the 'pov' key.")
             
         action_list.append(transition['action'])

@@ -104,3 +104,117 @@ class Treechop(HumanControlEnvSpec):
 
     def get_docstring(self):
         return TREECHOP_DOC
+
+
+class ConfigurableTreechop(Treechop):
+    """
+    Treechop environment with configurable starting conditions for curriculum learning.
+    
+    Supports 3 independent switches that can be combined:
+    - spawn_type: "random" or "near_tree" (near_tree not yet implemented)
+    - with_logs: Number of starting logs (0-10)
+    - with_axe: Whether to start with wooden axe
+    
+    Examples:
+        # Easy - just needs to chop
+        env = ConfigurableTreechop(with_axe=True).make()
+        
+        # Medium - has materials for axe
+        env = ConfigurableTreechop(with_logs=6).make()
+        
+        # Hard - full task from scratch
+        env = ConfigurableTreechop(with_logs=0, with_axe=False).make()
+    """
+    
+    def __init__(
+        self, 
+        spawn_type: str = "random",
+        with_logs: int = 0, 
+        with_axe: bool = False,
+        max_episode_steps: int = None,
+        *args, 
+        **kwargs
+    ):
+        """
+        Args:
+            spawn_type: "random" (default) or "near_tree" (not yet implemented)
+            with_logs: Number of oak logs to start with (0-10)
+            with_axe: Whether to start with a wooden axe equipped
+            max_episode_steps: Override max steps (default: TREECHOP_LENGTH)
+        """
+        self.spawn_type = spawn_type
+        self.with_logs = min(max(0, with_logs), 64)  # Clamp to valid range
+        self.with_axe = with_axe
+        
+        # Set custom name based on config
+        config_parts = []
+        if with_axe:
+            config_parts.append("axe")
+        if with_logs > 0:
+            config_parts.append(f"{with_logs}logs")
+        if spawn_type != "random":
+            config_parts.append(spawn_type)
+        
+        config_suffix = "_" + "_".join(config_parts) if config_parts else ""
+        kwargs['name'] = f'MineRLConfigTreechop{config_suffix}-v0'
+        
+        # Override max episode steps if provided
+        if max_episode_steps is not None:
+            kwargs['max_episode_steps'] = max_episode_steps
+        
+        super().__init__(*args, **kwargs)
+    
+    def create_agent_start(self) -> List[Handler]:
+        """Create agent start handlers with configured inventory."""
+        # Get base handlers (excludes parent's inventory setup)
+        base_handlers = Treechop.create_agent_start.__wrapped__(self) if hasattr(Treechop.create_agent_start, '__wrapped__') else []
+        
+        # Actually just use the grandparent's create_agent_start to avoid duplicate items
+        from minerl.herobraine.env_specs.human_controls import HumanControlEnvSpec
+        base_handlers = HumanControlEnvSpec.create_agent_start(self)
+        
+        # Build custom inventory
+        inventory = []
+        
+        if self.with_logs > 0:
+            inventory.append(dict(type="oak_log", quantity=self.with_logs))
+        
+        if self.with_axe:
+            inventory.append(dict(type="wooden_axe", quantity=1))
+        
+        if inventory:
+            base_handlers.append(
+                handlers.SimpleInventoryAgentStart(inventory)
+            )
+        
+        # Handle spawn type (near_tree would need custom handler)
+        if self.spawn_type == "near_tree":
+            # TODO: Implement custom near-tree spawn handler
+            # For now, forest biome (fixedBiome=11) provides naturally dense trees
+            print("Warning: near_tree spawn not yet implemented, using random spawn")
+        
+        return base_handlers
+    
+    @classmethod
+    def from_config(cls, config: dict) -> 'ConfigurableTreechop':
+        """
+        Create from config dict (e.g., from YAML).
+        
+        Args:
+            config: Dict with keys 'spawn_type', 'with_logs', 'with_axe'
+        
+        Returns:
+            ConfigurableTreechop instance
+        """
+        return cls(
+            spawn_type=config.get('spawn_type', 'random'),
+            with_logs=config.get('with_logs', 0),
+            with_axe=config.get('with_axe', False),
+            max_episode_steps=config.get('max_episode_steps', None)
+        )
+
+
+# Pre-defined curriculum stages for convenience
+CURRICULUM_EASY = dict(spawn_type="random", with_logs=0, with_axe=True)
+CURRICULUM_MEDIUM = dict(spawn_type="random", with_logs=6, with_axe=False)  
+CURRICULUM_HARD = dict(spawn_type="random", with_logs=0, with_axe=False)

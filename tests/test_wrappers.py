@@ -52,126 +52,125 @@ class TestObservationWrapper:
     """Tests for the ObservationWrapper."""
     
     def test_reset_adds_scalars(self):
-        """Reset should return observation with time, yaw, pitch."""
+        """Reset should return observation with time_left, yaw, pitch."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         obs = wrapped.reset()
-        
+
         assert 'pov' in obs
-        assert 'time' in obs
+        assert 'time_left' in obs
         assert 'yaw' in obs
         assert 'pitch' in obs
-    
+
     def test_initial_time_is_one(self):
-        """Time should be 1.0 at reset."""
+        """Time left should be 1.0 at reset (start of episode)."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         obs = wrapped.reset()
-        
-        assert obs['time'][0] == 1.0
-    
+
+        assert obs['time_left'][0] == 1.0
+
     def test_time_decreases(self):
-        """Time should decrease as steps progress."""
+        """Time left should decrease as episode progresses."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         obs = wrapped.reset()
-        initial_time = obs['time'][0]
-        
+        initial_time = obs['time_left'][0]
+
+        # Take 50 steps in the episode
         for _ in range(50):
             obs, _, _, _ = wrapped.step(0)
-        
-        assert obs['time'][0] < initial_time
-        assert abs(obs['time'][0] - 0.5) < 0.01  # Should be ~0.5 after 50/100 steps
+
+        assert obs['time_left'][0] < initial_time
+        assert abs(obs['time_left'][0] - 0.5) < 0.01  # Should be ~0.5 after 50/100 steps
     
     def test_orientation_update(self):
         """Orientation should update correctly."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         wrapped.reset()
         wrapped.update_orientation(delta_yaw=90, delta_pitch=30)
-        
+
         obs, _, _, _ = wrapped.step(0)
-        
+
         # Normalized: yaw 90/180 = 0.5, pitch 30/90 = 0.33
         assert abs(obs['yaw'][0] - 0.5) < 0.01
         assert abs(obs['pitch'][0] - 0.333) < 0.02
-    
+
     def test_pitch_clamping(self):
         """Pitch should be clamped to [-90, 90]."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         wrapped.reset()
         wrapped.update_orientation(delta_yaw=0, delta_pitch=100)  # Over limit
-        
+
         obs, _, _, _ = wrapped.step(0)
-        
+
         assert obs['pitch'][0] == 1.0  # Clamped to 90, normalized to 1.0
-    
+
     def test_yaw_wrapping(self):
         """Yaw should wrap around at 180/-180."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         wrapped.reset()
         wrapped.update_orientation(delta_yaw=270, delta_pitch=0)  # 270 -> -90
-        
+
         obs, _, _, _ = wrapped.step(0)
-        
+
         # 270 degrees wraps to -90, normalized: -90/180 = -0.5
         assert abs(obs['yaw'][0] - (-0.5)) < 0.01
-    
+
     def test_observation_space_updated(self):
         """Wrapped env should have updated observation space."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         assert 'pov' in wrapped.observation_space.spaces
-        assert 'time' in wrapped.observation_space.spaces
+        assert 'time_left' in wrapped.observation_space.spaces
         assert 'yaw' in wrapped.observation_space.spaces
         assert 'pitch' in wrapped.observation_space.spaces
     
     def test_pov_passthrough(self):
         """POV observation should pass through unchanged."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=100)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=100)
+
         obs = wrapped.reset()
-        
+
         assert obs['pov'].shape == (4, 84, 84)
         assert obs['pov'].dtype == np.uint8
 
 
 class TestObservationWrapperEdgeCases:
     """Edge case tests for ObservationWrapper."""
-    
+
     def test_max_steps_reached(self):
-        """Time should be 0 at max_steps."""
+        """Time left should be 0 at max episode steps."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=10)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=10)
+
         wrapped.reset()
-        
         for _ in range(10):
             obs, _, _, _ = wrapped.step(0)
-        
-        assert obs['time'][0] == 0.0
-    
+
+        assert obs['time_left'][0] == 0.0
+
     def test_beyond_max_steps(self):
-        """Time should stay at 0 beyond max_steps."""
+        """Time left should stay at 0 beyond max episode steps."""
         env = MockBaseEnv()
-        wrapped = ObservationWrapper(env, max_steps=5)
-        
+        wrapped = ObservationWrapper(env, max_episode_steps=5)
+
         wrapped.reset()
-        
         for _ in range(10):
             obs, _, _, _ = wrapped.step(0)
-        
-        assert obs['time'][0] == 0.0  # Should not go negative
+
+        assert obs['time_left'][0] == 0.0  # Should not go negative
 
 
 class TestExtendedActionWrapper:

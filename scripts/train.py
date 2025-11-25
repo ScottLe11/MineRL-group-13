@@ -118,7 +118,7 @@ def _ensure_env_registered():
 def create_env(config: dict, use_mock: bool = False):
     """
     Create and wrap the MineRL environment.
-    
+
     Wrapper order:
     1. Base MineRL env (CustomTreechop)
     2. StackAndProcessWrapper (frame processing)
@@ -126,16 +126,16 @@ def create_env(config: dict, use_mock: bool = False):
     4. RewardWrapper (reward shaping)
     5. ObservationWrapper (add scalars)
     6. ExtendedActionWrapper (discrete actions)
-    
+
     Args:
         config: Configuration dictionary
         use_mock: If True, force use of mock environment for testing
     """
     global _CURRICULUM_CONFIG
-    
+
     env_config = config['environment']
     reward_config = config.get('rewards', {})
-    
+
     # Set curriculum config BEFORE creating env (used by CustomTreechop)
     curriculum = env_config.get('curriculum', {})
     _CURRICULUM_CONFIG = {
@@ -143,11 +143,15 @@ def create_env(config: dict, use_mock: bool = False):
         'with_axe': curriculum.get('with_axe', False),
     }
     print(f"Curriculum config: with_logs={_CURRICULUM_CONFIG['with_logs']}, with_axe={_CURRICULUM_CONFIG['with_axe']}")
-    
+
+    # Calculate max steps per episode (episode_seconds * 5 because 1 step = 4 frames = 200ms)
+    episode_seconds = env_config.get('episode_seconds', 20)
+    max_steps_per_episode = episode_seconds * 5
+
     if use_mock:
         print("Using mock environment (use_mock=True)")
-        return create_mock_env(env_config, reward_config)
-    
+        return create_mock_env(env_config, reward_config, max_steps_per_episode)
+
     # Try to create real MineRL environment
     try:
         _ensure_env_registered()
@@ -156,16 +160,16 @@ def create_env(config: dict, use_mock: bool = False):
     except Exception as e:
         print(f"Warning: Could not create MineRL env '{env_config['name']}': {e}")
         print("Falling back to mock environment...")
-        return create_mock_env(env_config, reward_config)
-    
+        return create_mock_env(env_config, reward_config, max_steps_per_episode)
+
     # Apply wrappers in order (same as main.py but with additional wrappers)
     env = StackAndProcessWrapper(env, shape=tuple(env_config['frame_shape']))
     env = HoldAttackWrapper(
         env,
-        hold_steps=35, 
+        hold_steps=35,
         lock_aim=True,
-        pass_through_move=False, 
-        yaw_per_tick=0.0, 
+        pass_through_move=False,
+        yaw_per_tick=0.0,
         fwd_jump_ticks=0
     )
     env = RewardWrapper(
@@ -173,75 +177,73 @@ def create_env(config: dict, use_mock: bool = False):
         wood_value=reward_config.get('wood_value', 1.0),
         step_penalty=reward_config.get('step_penalty', -0.001)
     )
-    # Compute max_steps from episode_seconds (1 step = 4 frames = 200ms)
-    max_steps = env_config.get('episode_seconds', 20) * 5
-    env = ObservationWrapper(env, max_steps=max_steps)
+    env = ObservationWrapper(env, max_episode_steps=max_steps_per_episode)
     env = ExtendedActionWrapper(env)
-    
+
     return env
 
 
-def create_mock_env(env_config: dict, reward_config: dict = None):
+def create_mock_env(env_config: dict, reward_config: dict = None, max_episode_steps: int = None):
     """Create a mock environment for testing without MineRL installed."""
-    
+
     if reward_config is None:
         reward_config = {'wood_value': 1.0, 'step_penalty': -0.001}
-    
+
     class MockMineRLEnv:
         """Mock environment that mimics the wrapped MineRL interface."""
-        
-        def __init__(self, config, rewards):
+
+        def __init__(self, config, rewards, max_steps):
             # Compute max_steps from episode_seconds (1 step = 4 frames = 200ms)
-            self.max_steps = config.get('episode_seconds', 20) * 5
+            self.max_steps = max_steps if max_steps else config.get('episode_seconds', 20) * 5
             self.frame_shape = tuple(config['frame_shape'])
             self.wood_value = rewards.get('wood_value', 1.0)
             self.step_penalty = rewards.get('step_penalty', -0.001)
             self.current_step = 0
-            
+
             # Observation space matches ObservationWrapper output
             self.observation_space = gym.spaces.Dict({
                 'pov': gym.spaces.Box(0, 255, (4, *self.frame_shape), dtype=np.uint8),
-                'time': gym.spaces.Box(0, 1, (1,), dtype=np.float32),
+                'time_left': gym.spaces.Box(0, 1, (1,), dtype=np.float32),
                 'yaw': gym.spaces.Box(-1, 1, (1,), dtype=np.float32),
                 'pitch': gym.spaces.Box(-1, 1, (1,), dtype=np.float32),
             })
-            
+
             # Action space: 23 actions from ExtendedActionWrapper
             self.action_space = gym.spaces.Discrete(23)
-        
+
         def reset(self):
             self.current_step = 0
             return {
                 'pov': np.zeros((4, *self.frame_shape), dtype=np.uint8),
-                'time': np.array([1.0], dtype=np.float32),
+                'time_left': np.array([1.0], dtype=np.float32),
                 'yaw': np.array([0.0], dtype=np.float32),
                 'pitch': np.array([0.0], dtype=np.float32),
             }
-        
+
         def step(self, action):
             self.current_step += 1
-            
-            # Mock observation
+
+            # Mock observation - time_left decreases during episode
             obs = {
                 'pov': np.random.randint(0, 256, (4, *self.frame_shape), dtype=np.uint8),
-                'time': np.array([max(0, (self.max_steps - self.current_step) / self.max_steps)], dtype=np.float32),
+                'time_left': np.array([max(0.0, (self.max_steps - self.current_step) / self.max_steps)], dtype=np.float32),
                 'yaw': np.array([0.0], dtype=np.float32),
                 'pitch': np.array([0.0], dtype=np.float32),
             }
-            
+
             # Mock reward: log × wood_value + step penalty
             logs = 1 if random.random() < 0.01 else 0  # 1% chance
             reward = (logs * self.wood_value) + self.step_penalty
-            
+
             done = self.current_step >= self.max_steps
             info = {'wood_this_frame': logs}
-            
+
             return obs, reward, done, info
-        
+
         def close(self):
             pass
-    
-    return MockMineRLEnv(env_config, reward_config)
+
+    return MockMineRLEnv(env_config, reward_config, max_episode_steps)
 
 
 def train(config: dict, use_mock: bool = False):
@@ -321,34 +323,34 @@ def train(config: dict, use_mock: bool = False):
         episode_reward = 0
         episode_wood = 0
         step_in_episode = 0
-        
+
         # Run episode until done or max steps
         while step_in_episode < max_steps_per_episode:
             # Select action
             action = agent.select_action(obs, explore=True)
-            
+
             # Take step (this executes 4 MineRL frames = 200ms)
             next_obs, reward, done, info = env.step(action)
-            
+
             # Store experience
             state = {
                 'pov': obs['pov'],
-                'time': float(obs['time'][0]) if hasattr(obs['time'], '__getitem__') else float(obs['time']),
+                'time': float(obs['time_left'][0]) if hasattr(obs['time_left'], '__getitem__') else float(obs['time_left']),
                 'yaw': float(obs['yaw'][0]) if hasattr(obs['yaw'], '__getitem__') else float(obs['yaw']),
                 'pitch': float(obs['pitch'][0]) if hasattr(obs['pitch'], '__getitem__') else float(obs['pitch']),
             }
             next_state = {
                 'pov': next_obs['pov'],
-                'time': float(next_obs['time'][0]) if hasattr(next_obs['time'], '__getitem__') else float(next_obs['time']),
+                'time': float(next_obs['time_left'][0]) if hasattr(next_obs['time_left'], '__getitem__') else float(next_obs['time_left']),
                 'yaw': float(next_obs['yaw'][0]) if hasattr(next_obs['yaw'], '__getitem__') else float(next_obs['yaw']),
                 'pitch': float(next_obs['pitch'][0]) if hasattr(next_obs['pitch'], '__getitem__') else float(next_obs['pitch']),
             }
             agent.store_experience(state, action, reward, next_state, done)
-            
+
             # Train every train_freq steps
             if global_step % train_freq == 0 and agent.replay_buffer.is_ready():
                 agent.train_step()
-            
+
             # Update counters
             # Macros take multiple frames - count them properly (frames / 4 = agent steps)
             if 'macro_steps' in info:
@@ -357,13 +359,13 @@ def train(config: dict, use_mock: bool = False):
             else:
                 # Primitive action: 1 agent step = 4 frames
                 steps_used = 1
-            
+
             obs = next_obs
             episode_reward += reward
             episode_wood += info.get('wood_this_frame', 0)
             step_in_episode += steps_used
             global_step += steps_used
-            
+
             if done:
                 break
         

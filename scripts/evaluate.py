@@ -73,7 +73,7 @@ def evaluate_episode(env, network, device: str, render: bool = False):
         # Convert observation to tensor
         obs_tensor = {
             'pov': torch.tensor(obs['pov'], dtype=torch.uint8).unsqueeze(0).to(device),
-            'time': torch.tensor([obs['time']], dtype=torch.float32).to(device),
+            'time': torch.tensor([obs['time_left']], dtype=torch.float32).to(device),
             'yaw': torch.tensor([obs['yaw']], dtype=torch.float32).to(device),
             'pitch': torch.tensor([obs['pitch']], dtype=torch.float32).to(device),
         }

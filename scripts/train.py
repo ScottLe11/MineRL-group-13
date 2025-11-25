@@ -26,7 +26,7 @@ from agent.dqn import DQNAgent
 from wrappers.vision import StackAndProcessWrapper
 from wrappers.observation import ObservationWrapper
 from wrappers.hold_attack import HoldAttackWrapper
-from wrappers.actions import SimpleActionWrapper
+from wrappers.actions import ExtendedActionWrapper
 
 
 def set_seed(seed: int):
@@ -67,7 +67,7 @@ def create_env(config: dict):
     env = StackAndProcessWrapper(env, shape=tuple(env_config['frame_shape']))
     env = HoldAttackWrapper(env)
     env = ObservationWrapper(env, max_steps=env_config['max_steps'])
-    env = SimpleActionWrapper(env)
+    env = ExtendedActionWrapper(env)
     
     return env
 
@@ -91,8 +91,8 @@ def create_mock_env(env_config: dict):
                 'pitch': gym.spaces.Box(-1, 1, (1,), dtype=np.float32),
             })
             
-            # Action space: 8 actions from SimpleActionWrapper (until extended)
-            self.action_space = gym.spaces.Discrete(8)
+            # Action space: 23 actions from ExtendedActionWrapper
+            self.action_space = gym.spaces.Discrete(23)
         
         def reset(self):
             self.current_step = 0

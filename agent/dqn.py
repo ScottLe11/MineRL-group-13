@@ -10,7 +10,7 @@ import torch.optim as optim
 from typing import Dict, Tuple, Optional
 
 from networks import DQNNetwork
-from .replay_buffer import ReplayBuffer
+from .replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 
 
 class EpsilonSchedule:
@@ -52,8 +52,9 @@ class DQNAgent:
     """
     Deep Q-Network agent with:
     - Double DQN (use online network to select actions, target to evaluate)
-    - Soft target updates (Polyak averaging)
+    - Soft or hard target updates (configurable)
     - Epsilon-greedy exploration with linear decay
+    - Optional Prioritized Experience Replay
     """
     
     def __init__(
@@ -64,12 +65,18 @@ class DQNAgent:
         learning_rate: float = 1e-4,
         gamma: float = 0.99,
         tau: float = 0.005,
+        target_update_method: str = "soft",
+        hard_update_freq: int = 1000,
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.05,
         epsilon_decay_steps: int = 100000,
         buffer_capacity: int = 100000,
         buffer_min_size: int = 1000,
         batch_size: int = 32,
+        use_per: bool = False,
+        per_alpha: float = 0.6,
+        per_beta_start: float = 0.4,
+        per_beta_end: float = 1.0,
         device: str = None
     ):
         """
@@ -79,13 +86,19 @@ class DQNAgent:
             num_scalars: Number of scalar observations
             learning_rate: Learning rate for optimizer
             gamma: Discount factor
-            tau: Soft update coefficient (1.0 = hard update)
+            tau: Soft update coefficient (used when target_update_method="soft")
+            target_update_method: "soft" (Polyak averaging) or "hard" (periodic copy)
+            hard_update_freq: Steps between hard updates (used when target_update_method="hard")
             epsilon_start: Initial exploration rate
             epsilon_end: Final exploration rate
             epsilon_decay_steps: Steps to decay epsilon
             buffer_capacity: Replay buffer capacity
             buffer_min_size: Min experiences before training
             batch_size: Batch size for training
+            use_per: Whether to use Prioritized Experience Replay
+            per_alpha: PER priority exponent (0=uniform, 1=full prioritization)
+            per_beta_start: PER initial importance sampling exponent
+            per_beta_end: PER final importance sampling exponent
             device: 'cuda', 'mps', 'cpu', or None for auto-detect
         """
         # Device setup
@@ -108,14 +121,35 @@ class DQNAgent:
         # Optimizer
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
         
-        # Replay buffer
-        self.replay_buffer = ReplayBuffer(capacity=buffer_capacity, min_size=buffer_min_size)
+        # Replay buffer (PER or uniform)
+        self.use_per = use_per
+        if use_per:
+            self.replay_buffer = PrioritizedReplayBuffer(
+                capacity=buffer_capacity, 
+                min_size=buffer_min_size,
+                alpha=per_alpha,
+                beta_start=per_beta_start,
+                beta_end=per_beta_end,
+                beta_anneal_steps=epsilon_decay_steps  # Anneal with epsilon
+            )
+            print("Using Prioritized Experience Replay")
+        else:
+            self.replay_buffer = ReplayBuffer(capacity=buffer_capacity, min_size=buffer_min_size)
+            print("Using uniform replay buffer")
         
         # Hyperparameters
         self.num_actions = num_actions
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
+        
+        # Target update settings
+        self.target_update_method = target_update_method.lower()
+        self.hard_update_freq = hard_update_freq
+        if self.target_update_method not in ("soft", "hard"):
+            raise ValueError(f"target_update_method must be 'soft' or 'hard', got '{target_update_method}'")
+        print(f"Target updates: {self.target_update_method}" + 
+              (f" (tau={tau})" if self.target_update_method == "soft" else f" (every {hard_update_freq} steps)"))
         
         # Exploration
         self.epsilon_start = epsilon_start
@@ -168,8 +202,14 @@ class DQNAgent:
         if not self.replay_buffer.is_ready():
             return None
         
-        # Sample batch
-        states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
+        # Sample batch (PER returns weights and indices)
+        if self.use_per:
+            states, actions, rewards, next_states, dones, weights, indices = self.replay_buffer.sample(self.batch_size)
+            weights = torch.tensor(weights, dtype=torch.float32, device=self.device)
+        else:
+            states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
+            weights = torch.ones(self.batch_size, device=self.device)
+            indices = None
         
         # Convert to tensors
         state_batch = self._batch_states_to_tensor(states)
@@ -193,8 +233,12 @@ class DQNAgent:
             # Target Q-values
             target_q_values = reward_batch + self.gamma * next_q_values * (1 - done_batch)
         
-        # Loss (Huber loss is more stable than MSE)
-        loss = nn.SmoothL1Loss()(q_values, target_q_values)
+        # TD errors (for PER priority updates)
+        td_errors = (q_values - target_q_values).detach()
+        
+        # Weighted loss for PER (importance sampling correction)
+        element_wise_loss = nn.SmoothL1Loss(reduction='none')(q_values, target_q_values)
+        loss = (element_wise_loss * weights).mean()
         
         # Optimize
         self.optimizer.zero_grad()
@@ -203,23 +247,41 @@ class DQNAgent:
         torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=10.0)
         self.optimizer.step()
         
-        # Soft update target network
-        self._soft_update()
+        # Update priorities in PER buffer
+        if self.use_per and indices is not None:
+            self.replay_buffer.update_priorities(indices, td_errors.abs().cpu().numpy())
+        
+        # Update target network
+        if self.target_update_method == "soft":
+            self._soft_update()
+        else:  # hard update
+            if self.train_count % self.hard_update_freq == 0:
+                self._hard_update()
         
         self.train_count += 1
         
-        return {
+        metrics = {
             'loss': loss.item(),
             'q_mean': q_values.mean().item(),
             'q_max': q_values.max().item(),
-            'epsilon': self.get_epsilon()
+            'epsilon': self.get_epsilon(),
+            'td_error_mean': td_errors.abs().mean().item()
         }
+        
+        if self.use_per:
+            metrics['per_beta'] = self.replay_buffer._get_beta()
+        
+        return metrics
     
     def _soft_update(self):
         """Soft update target network weights: θ_target = τ*θ_local + (1-τ)*θ_target"""
         for target_param, local_param in zip(self.target_network.parameters(), 
                                               self.q_network.parameters()):
             target_param.data.copy_(self.tau * local_param.data + (1.0 - self.tau) * target_param.data)
+    
+    def _hard_update(self):
+        """Hard update: copy all weights from online to target network."""
+        self.target_network.load_state_dict(self.q_network.state_dict())
     
     def _state_to_tensor(self, state: Dict) -> Dict:
         """Convert single state dict to batched tensor dict."""

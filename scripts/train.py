@@ -56,6 +56,7 @@ def create_env(config: dict):
     # Note: MineRL env name may need adjustment based on your setup
     try:
         import minerl
+        import main
         env = gym.make(env_config['name'])
     except Exception as e:
         print(f"Warning: Could not create MineRL env '{env_config['name']}': {e}")
@@ -129,6 +130,51 @@ def create_mock_env(env_config: dict):
     
     return MockMineRLEnv(env_config)
 
+def prefill_replay_buffer(agent: DQNAgent, npz_path: str = "bc_expert_data.npz"):
+    try:
+        # 1. Load the single, compressed NPZ file with all four arrays
+        data = np.load(npz_path, allow_pickle=True)
+        observations = data['obs']
+        actions = data['actions']
+        rewards = data['rewards']
+        dones = data['dones']
+        
+    except FileNotFoundError:
+        print(f"[PRE-FILL] WARNING: NPZ file not found at {npz_path}. Skipping pre-fill.")
+        return
+    except KeyError:
+        print(f"[PRE-FILL] ERROR: NPZ file is missing 'rewards' or 'dones' key. Re-run pkl_parser.py.")
+        return
+    
+    num_transitions = observations.shape[0]
+    for i in range(num_transitions - 1): # Loop up to second-to-last item for transitions
+        
+        # 2. Complete the state dictionary with required scalar features (zeroed for recorded data)
+        state_i = {
+            'pov': observations[i], 
+            'time': 0.0, 'yaw': 0.0, 'pitch': 0.0,
+        }
+        # The next state is the observation from the next index
+        next_state_i = {
+            'pov': observations[i+1],
+            'time': 0.0, 'yaw': 0.0, 'pitch': 0.0,
+        }
+        
+        # 3. Store the complete experience
+        agent.store_experience(
+            state=state_i, 
+            action=actions[i].item(),  # .item() to ensure integer type
+            reward=rewards[i].item(), 
+            next_state=next_state_i, 
+            done=dones[i].item()
+        )
+    
+    print(f"[PRE-FILL] Successfully stored {num_transitions - 1} expert transitions.")
+    if agent.replay_buffer.is_ready():
+        print(f"[PRE-FILL] Replay buffer is ready for training. Size: {len(agent.replay_buffer)}")
+    else:
+        print(f"[PRE-FILL] WARNING: Buffer size ({len(agent.replay_buffer)}) is less than min_size ({agent.replay_buffer.min_size}).")
+    pass
 
 def train(config: dict):
     """
@@ -151,7 +197,46 @@ def train(config: dict):
     config['dqn']['num_actions'] = env.action_space.n
     
     # Create agent
-    agent = DQNAgent(config)
+    agent = DQNAgent(
+        num_actions=config['dqn']['num_actions'], # (Currently 8, but will be 23 later)
+        input_channels=config['network']['input_channels'], # 4
+        
+        # Learning parameters
+        learning_rate=config['dqn']['learning_rate'],
+        gamma=config['dqn']['gamma'],
+        
+        # Target Network parameters
+        tau=config['dqn']['target_update']['tau'],
+        
+        # Exploration parameters
+        epsilon_start=config['dqn']['exploration']['epsilon_start'],
+        epsilon_end=config['dqn']['exploration']['epsilon_end'],
+        epsilon_decay_steps=config['dqn']['exploration']['epsilon_decay_steps'],
+        
+        # Replay Buffer parameters (nested dicts)
+        buffer_capacity=config['dqn']['replay_buffer']['capacity'],
+        buffer_min_size=config['dqn']['replay_buffer']['min_size'],
+        batch_size=config['dqn']['batch_size'],
+        
+        # Device setup
+        device=device
+    )
+    
+    prefill_replay_buffer(agent, npz_path="bc_expert_data.npz")
+    buffer_len = len(agent.replay_buffer)
+    min_size = config['dqn']['replay_buffer']['min_size']
+    print("\n--- TRAIN START VALIDATION ---")
+    print(f" Buffer Length: {buffer_len} / {min_size}")
+    print(f" Buffer is Ready: {agent.replay_buffer.is_ready()}")
+    
+    if buffer_len >= min_size:
+        print("Pipeline is verified! Starting main training loop.")
+    else:
+        print("ERROR: Buffer size is insufficient. Check data.")
+        # CRITICAL: We exit here to skip the actual long training run
+        # This closes the environment processes created by SubprocVecEnv
+        env.close() 
+        sys.exit(0) # Exit the script here
     
     # Create logger
     logger = Logger(

@@ -45,6 +45,7 @@ class SmallCNN(nn.Module):
         
         self.fc = nn.Sequential(
             nn.Linear(64 * 4 * 4, 512),
+            #nn.Linear(64 * 7 * 7, 512),
             nn.ReLU()
         )
         
@@ -92,6 +93,7 @@ if __name__ == "__main__":
     
     # Test forward pass
     batch = torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.float32)
+    #batch = torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.float32)
     output = model(batch)
     print(f"  Input shape: {batch.shape}")
     print(f"  Output shape: {output.shape}")

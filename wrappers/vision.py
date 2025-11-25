@@ -11,6 +11,7 @@ class StackAndProcessWrapper(gym.Wrapper):
         self.shape = shape
         self.frame_stack = deque(maxlen=4)
         self.last_full_obs = None
+        self.window_created = False
 
         new_pov_space = gym.spaces.Box(
             low=0, high=255, shape=(4, shape[0], shape[1]), dtype=np.uint8
@@ -56,5 +57,15 @@ class StackAndProcessWrapper(gym.Wrapper):
 
     def close(self):
         """Closes the base env and our custom render window."""
-        cv2.destroyWindow("MineRL Render")
+        if self.window_created:
+            cv2.destroyWindow("MineRL Render")
+        else:
+            try:
+                # Still try to clean up if the flag somehow failed, but ignore the error
+                cv2.destroyWindow("MineRL Render")
+            except cv2.error:
+                pass
+
         self.env.close()
+
+        

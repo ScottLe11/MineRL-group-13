@@ -3,6 +3,7 @@ import main
 from gym.envs.registration import register
 from wrappers import StackAndProcessWrapper
 from wrappers import TrajectoryRecorder
+from pathlib import Path
 
 WINDOW_W, WINDOW_H = 960, 540
 MOUSE_SENS = 0.20
@@ -42,10 +43,13 @@ def get_frame(env):
     return None
 
 if __name__ == "__main__":
-    # Environment Setup 
+    # Environment Setup
+    LOG_DIR_NAME = "expert_trajectory"
+    Path(LOG_DIR_NAME).mkdir(parents=True, exist_ok=True)
+     
     base_env = gym.make('MineRLcustom_treechop-v0')
     env = StackAndProcessWrapper(base_env)
-    env = TrajectoryRecorder(env, log_dir="/Users/brandon/Documents/Compsci175_Project/Recorder_data")  
+    env = TrajectoryRecorder(env, log_dir=LOG_DIR_NAME)  
     env.reset()
 
     # Pygame Setup 

@@ -1,0 +1,84 @@
+# MineRL Tree-Chopping DQN Agent - Requirements
+# Python 3.10 Compatible
+# Last Updated: 2025-11-24
+
+# ============================================================================
+# CORE DEPENDENCIES
+# ============================================================================
+
+# MineRL Environment v1.0.2 (Aug 2023 release with gym fix)
+# Install from GitHub: pip install git+https://github.com/minerllabs/minerl@v1.0.2
+
+
+# Gym - v1.0.2 fixed compatibility with newer gym
+gym>=0.21.0
+
+# NumPy
+numpy>=1.21.0
+
+# ============================================================================
+# DEEP LEARNING (PyTorch)
+# ============================================================================
+
+# PyTorch 2.x works great with Python 3.10
+torch>=2.0.0
+torchvision>=0.15.0
+
+# ============================================================================
+# IMAGE PROCESSING
+# ============================================================================
+
+opencv-python>=4.5.0
+Pillow>=9.0.0
+
+# ============================================================================
+# CONFIGURATION & UTILITIES
+# ============================================================================
+
+PyYAML>=6.0.0
+psutil>=5.9.0
+
+# ============================================================================
+# LOGGING & MONITORING
+# ============================================================================
+
+tensorboard>=2.10.0
+
+# ============================================================================
+# TESTING
+# ============================================================================
+
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# ============================================================================
+# VISUALIZATION (Optional)
+# ============================================================================
+
+matplotlib>=3.5.0
+seaborn>=0.12.0
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# 
+# Installation:
+#   pip install -r requirements.txt
+#
+# If minerl 1.0.2 isn't on PyPI, install from GitHub:
+#   pip install git+https://github.com/minerllabs/minerl@v1.0.2
+#
+# For CUDA support (recommended for training):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# For M1/M2 Mac (MPS support):
+#   pip install torch torchvision (MPS auto-detected)
+#
+# Verify installation:
+#   python -c "import minerl, torch, gym; print('✅ All core packages installed')"
+#
+# Troubleshooting:
+#   - MineRL requires Java JDK 8: https://github.com/minerllabs/minerl/tree/v1.0.2
+#   - On Mac: brew install openjdk@8
+#   - On Ubuntu: sudo apt install openjdk-8-jdk
+

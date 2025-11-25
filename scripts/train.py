@@ -48,8 +48,18 @@ def set_seed(seed: int):
 # ENVIRONMENT SETUP (matches main.py)
 # ============================================================================
 
+# Global curriculum config - set before env registration
+_CURRICULUM_CONFIG = {
+    'with_logs': 0,
+    'with_axe': False,
+}
+
+
 class CustomTreechop(Treechop):
-    """Custom treechop environment with configurable starting conditions."""
+    """Custom treechop environment with configurable starting conditions.
+    
+    Uses global _CURRICULUM_CONFIG since gym.register doesn't support arguments.
+    """
     
     def __init__(self, *args, **kwargs):
         if 'name' not in kwargs:
@@ -57,9 +67,26 @@ class CustomTreechop(Treechop):
         super().__init__(*args, **kwargs)
 
     def create_agent_start(self) -> list:
-        base_handlers = super().create_agent_start()
-        # Note: AgentStartNear with block type may need custom handler
-        # For now, forest biome naturally has trees nearby
+        """Override to use curriculum config instead of hardcoded values."""
+        # Get base handlers from HumanControlEnvSpec (skip Treechop's hardcoded inventory)
+        from minerl.herobraine.env_specs.human_controls import HumanControlEnvSpec
+        base_handlers = HumanControlEnvSpec.create_agent_start(self)
+        
+        # Build inventory from curriculum config
+        inventory = []
+        
+        with_logs = _CURRICULUM_CONFIG.get('with_logs', 0)
+        with_axe = _CURRICULUM_CONFIG.get('with_axe', False)
+        
+        if with_logs > 0:
+            inventory.append(dict(type="oak_log", quantity=with_logs))
+        
+        if with_axe:
+            inventory.append(dict(type="wooden_axe", quantity=1))
+        
+        if inventory:
+            base_handlers.append(handlers.SimpleInventoryAgentStart(inventory))
+        
         return base_handlers
 
 
@@ -104,8 +131,18 @@ def create_env(config: dict, use_mock: bool = False):
         config: Configuration dictionary
         use_mock: If True, force use of mock environment for testing
     """
+    global _CURRICULUM_CONFIG
+    
     env_config = config['environment']
     reward_config = config.get('rewards', {})
+    
+    # Set curriculum config BEFORE creating env (used by CustomTreechop)
+    curriculum = env_config.get('curriculum', {})
+    _CURRICULUM_CONFIG = {
+        'with_logs': curriculum.get('with_logs', 0),
+        'with_axe': curriculum.get('with_axe', False),
+    }
+    print(f"Curriculum config: with_logs={_CURRICULUM_CONFIG['with_logs']}, with_axe={_CURRICULUM_CONFIG['with_axe']}")
     
     if use_mock:
         print("Using mock environment (use_mock=True)")

@@ -6,15 +6,44 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from treechop_spec import Treechop, handlers
 from wrappers import StackAndProcessWrapper, SimpleActionWrapper, HoldAttackWrapper
 
+# Curriculum config - modify these to change starting conditions
+CURRICULUM_CONFIG = {
+    'with_logs': 0,    # Number of starting logs (0-10)
+    'with_axe': False, # Start with wooden axe equipped
+}
+
+
 # Define custom class, inheriting from 'treechop_spec'
 class custom_treechop(Treechop):
+    """Custom treechop environment with configurable starting conditions."""
+    
     def __init__(self, *args, **kwargs):
         if 'name' not in kwargs:
             kwargs['name'] = 'MineRLcustom_treechop-v0'
         super().__init__(*args, **kwargs)
 
     def create_agent_start(self) -> list:
-        base_handlers = super().create_agent_start()
+        """Override to use curriculum config instead of hardcoded values."""
+        # Get base handlers from HumanControlEnvSpec (skip Treechop's hardcoded inventory)
+        from minerl.herobraine.env_specs.human_controls import HumanControlEnvSpec
+        base_handlers = HumanControlEnvSpec.create_agent_start(self)
+        
+        # Build inventory from curriculum config
+        inventory = []
+        
+        with_logs = CURRICULUM_CONFIG.get('with_logs', 0)
+        with_axe = CURRICULUM_CONFIG.get('with_axe', False)
+        
+        if with_logs > 0:
+            inventory.append(dict(type="oak_log", quantity=with_logs))
+        
+        if with_axe:
+            inventory.append(dict(type="wooden_axe", quantity=1))
+        
+        if inventory:
+            base_handlers.append(handlers.SimpleInventoryAgentStart(inventory))
+        
+        # Optionally spawn near trees
         base_handlers.append(
             handlers.AgentStartNear([
                 dict(type="log", distance=5)

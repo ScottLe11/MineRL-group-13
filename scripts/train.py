@@ -27,6 +27,7 @@ from wrappers.vision import StackAndProcessWrapper
 from wrappers.observation import ObservationWrapper
 from wrappers.hold_attack import HoldAttackWrapper
 from wrappers.actions import ExtendedActionWrapper
+from wrappers.reward import RewardWrapper
 
 
 def set_seed(seed: int):
@@ -47,10 +48,12 @@ def create_env(config: dict):
     1. Base MineRL env
     2. StackAndProcessWrapper (frame processing)
     3. HoldAttackWrapper (attack duration)
-    4. ObservationWrapper (add scalars)
-    5. SimpleActionWrapper (discrete actions)
+    4. RewardWrapper (reward shaping)
+    5. ObservationWrapper (add scalars)
+    6. ExtendedActionWrapper (discrete actions)
     """
     env_config = config['environment']
+    reward_config = config.get('rewards', {})
     
     # Create base environment
     # Note: MineRL env name may need adjustment based on your setup
@@ -60,27 +63,37 @@ def create_env(config: dict):
     except Exception as e:
         print(f"Warning: Could not create MineRL env '{env_config['name']}': {e}")
         print("Creating a mock environment for testing...")
-        env = create_mock_env(env_config)
+        env = create_mock_env(env_config, reward_config)
         return env
     
     # Apply wrappers in order
     env = StackAndProcessWrapper(env, shape=tuple(env_config['frame_shape']))
     env = HoldAttackWrapper(env)
+    env = RewardWrapper(
+        env,
+        step_penalty=reward_config.get('step_penalty', -0.001),
+        wood_reward_scale=reward_config.get('wood_collected', 1.0)
+    )
     env = ObservationWrapper(env, max_steps=env_config['max_steps'])
     env = ExtendedActionWrapper(env)
     
     return env
 
 
-def create_mock_env(env_config: dict):
+def create_mock_env(env_config: dict, reward_config: dict = None):
     """Create a mock environment for testing without MineRL installed."""
+    
+    if reward_config is None:
+        reward_config = {'step_penalty': -0.001, 'wood_collected': 1.0}
     
     class MockMineRLEnv:
         """Mock environment that mimics the wrapped MineRL interface."""
         
-        def __init__(self, config):
+        def __init__(self, config, rewards):
             self.max_steps = config['max_steps']
             self.frame_shape = tuple(config['frame_shape'])
+            self.step_penalty = rewards.get('step_penalty', -0.001)
+            self.wood_scale = rewards.get('wood_collected', 1.0)
             self.current_step = 0
             
             # Observation space matches ObservationWrapper output
@@ -114,20 +127,23 @@ def create_mock_env(env_config: dict):
                 'pitch': np.array([0.0], dtype=np.float32),
             }
             
-            # Mock reward: small step penalty, occasional positive for "wood"
-            reward = -0.001
-            if random.random() < 0.01:  # 1% chance of "collecting wood"
-                reward += 1.0
+            # Mock reward: step penalty + occasional wood collection
+            wood_collected = 1 if random.random() < 0.01 else 0  # 1% chance
+            reward = self.step_penalty + (wood_collected * self.wood_scale)
             
             done = self.current_step >= self.max_steps
-            info = {'wood_collected': 1 if reward > 0 else 0}
+            info = {
+                'wood_collected': wood_collected,
+                'raw_reward': wood_collected * self.wood_scale,
+                'shaped_reward': reward,
+            }
             
             return obs, reward, done, info
         
         def close(self):
             pass
     
-    return MockMineRLEnv(env_config)
+    return MockMineRLEnv(env_config, reward_config)
 
 
 def train(config: dict):

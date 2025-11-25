@@ -19,57 +19,6 @@ Build a Deep Reinforcement Learning agent that learns to **efficiently chop tree
 - Consistently collects wood in 60-second episodes (>80% success rate)
 - Stretch: Learns to craft axe for efficiency
 
----
-
-## 📚 Documentation
-
-**Start here**: [`GETTING_STARTED.md`](GETTING_STARTED.md) - Quick start guide
-
-### Core Documentation
-
-| Document | Purpose | When to Use |
-|----------|---------|-------------|
-| **IMPLEMENTATION_DECISIONS.md** | ✅ **Finalized design decisions** | **Before implementing** |
-| **PROJECT_ARCHITECTURE.md** | Module specifications & interfaces | During implementation |
-| **COMPONENT_INTERACTIONS.md** | Visual diagrams of data flow | Understanding system |
-| **CRITICAL_QUESTIONS.md** | ✅ All questions resolved | Reference decisions |
-| **MODULE_CHECKLIST.md** | Task tracking | Project management |
-| **INTEGRATION_PLAN.md** | Build order & testing | Planning work |
-| **PROJECT_STATUS.md** | Current state & blockers | Daily updates |
-| **DIRECTORY_STRUCTURE.md** | File layout | Navigation |
-| **MODULE_SPEC_TEMPLATE.md** | Detailed spec template | Creating specs |
-| **GETTING_STARTED.md** | Quick start | New team members |
-
----
-
-## 🚀 Quick Start
-
-### 1. Read Key Documents (30 min)
-```bash
-1. Read GETTING_STARTED.md (10 min)
-2. Skim IMPLEMENTATION_DECISIONS.md (10 min) - KEY DECISIONS
-3. Review COMPONENT_INTERACTIONS.md diagrams (10 min)
-```
-
-### 2. Set Up Environment (15 min)
-```bash
-cd /Users/edwinma/Documents/MineRL-group-13
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Mac/Linux
-
-# Install dependencies
-pip install minerl==1.0 torch torchvision opencv-python pyyaml tensorboard pytest psutil matplotlib
-
-# Create requirements.txt
-pip freeze > requirements.txt
-```
-
-### 3. Start Implementation
-See [`GETTING_STARTED.md`](GETTING_STARTED.md) for team assignments and parallel development strategy.
-
----
 
 ## 🏗️ System Overview
 
@@ -167,16 +116,15 @@ User/Script → Config → Trainer → (Environment, Agent, Logger, Evaluator)
 ## 🎯 Success Metrics
 
 ### Phase 1 (Recon)
-- ✅ At least 3 configs show learning
-- ✅ At least 1 config gets wood in >10% episodes
+- ✅ At least 5 configs show learning
+- ✅ Gets wood in >80% episodes
 
 ### Phase 2 (Validation)
-- ✅ Best config gets wood in >50% episodes
+- ✅ Best config gets wood consistently in all episodes
 - ✅ Stable learning curve
 
 ### Phase 3 (Final)
-- ✅ Final agent gets wood in >80% episodes
-- ✅ Average 2+ wood per episode
+- ✅ Final agent gets 20+ wood each episodes
 - 🎁 Stretch: Agent learns to craft & use axe
 
 ### Comparison to Baseline
@@ -222,30 +170,6 @@ User/Script → Config → Trainer → (Environment, Agent, Logger, Evaluator)
 - Gorila distributed training (Phase 3)
 - Human demonstrations (behavior cloning)
 - Curriculum learning
-
----
-
-## 📁 Project Structure
-
-```
-MineRL-group-13/
-├── 📄 Documentation (10 files) ✅ COMPLETE
-├── 📁 environment/      (Environment & wrappers)
-├── 📁 actions/          (23 action definitions)
-├── 📁 networks/         (CNN architectures)
-├── 📁 algorithms/       (DQN implementation)
-├── 📁 training/         (3-phase pipeline)
-├── 📁 utils/            (Config, logging, checkpointing)
-├── 📁 scripts/          (Entry points)
-├── 📁 tests/            (Test suite)
-├── 📁 evaluation/       (Evaluation & comparison)
-├── 📁 distributed/      (Gorila - optional)
-├── 📁 demonstrations/   (Demo parsing - optional)
-├── 📁 config/           (YAML configurations)
-└── 📁 crafting/         (Macro implementations) ✅ EXISTS
-```
-
-**Status**: 18 files exist, ~127 to create
 
 ---
 
@@ -339,11 +263,8 @@ MineRL-group-13/
 - Architecture documented
 - Ready for implementation
 
-**Next**: Begin parallel module development (Day 2)
 
 ---
-
-**Questions?** See `GETTING_STARTED.md` or check `PROJECT_STATUS.md` for current state.
 
 **Let's build this! 🚀🌳**
 

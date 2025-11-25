@@ -31,6 +31,10 @@ network:
   input_channels: 4                  # Frame stack size
   cnn_features: 512                  # CNN output features
   
+  # CNN Architecture selection
+  # Options: 'tiny' (~150K), 'small' (~400K), 'medium' (~600K), 'wide' (~1M), 'deep' (~500K)
+  architecture: "small"              # Default: small (Atari DQN style)
+  
 # =============================================================================
 # DQN AGENT
 # =============================================================================
@@ -62,6 +66,13 @@ dqn:
     method: "soft"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
     hard_update_freq: 1000           # Steps between hard updates (if hard)
+  
+  # Prioritized Experience Replay (optional)
+  prioritized_replay:
+    enabled: false                   # Use PER instead of uniform sampling
+    alpha: 0.6                       # Priority exponent (0=uniform, 1=full prioritization)
+    beta_start: 0.4                  # Initial importance sampling exponent
+    beta_end: 1.0                    # Final importance sampling exponent (anneals with epsilon)
 
 # =============================================================================
 # TRAINING

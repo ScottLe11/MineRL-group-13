@@ -162,8 +162,23 @@ def train(config: dict):
     # Update config with actual action space size
     config['dqn']['num_actions'] = env.action_space.n
     
-    # Create agent
-    agent = DQNAgent(config)
+    # Create agent - unpack config into DQNAgent constructor
+    dqn_config = config['dqn']
+    agent = DQNAgent(
+        num_actions=dqn_config['num_actions'],
+        input_channels=config['network']['input_channels'],
+        num_scalars=3,  # time, yaw, pitch
+        learning_rate=dqn_config['learning_rate'],
+        gamma=dqn_config['gamma'],
+        tau=dqn_config['target_update']['tau'],
+        epsilon_start=dqn_config['exploration']['epsilon_start'],
+        epsilon_end=dqn_config['exploration']['epsilon_end'],
+        epsilon_decay_steps=dqn_config['exploration']['epsilon_decay_steps'],
+        buffer_capacity=dqn_config['replay_buffer']['capacity'],
+        buffer_min_size=dqn_config['replay_buffer']['min_size'],
+        batch_size=dqn_config['batch_size'],
+        device=config['device']
+    )
     
     # Create logger
     logger = Logger(
@@ -195,8 +210,8 @@ def train(config: dict):
         done = False
         
         while not done and global_step < total_steps:
-            # Select action
-            action = agent.select_action(obs, global_step)
+            # Select action (explore=True during training)
+            action = agent.select_action(obs, explore=True)
             
             # Take step
             next_obs, reward, done, info = env.step(action)
@@ -239,7 +254,7 @@ def train(config: dict):
             
             # Progress logging
             if global_step % log_freq == 0:
-                epsilon = agent.epsilon_schedule.get_epsilon(global_step)
+                epsilon = agent.get_epsilon()
                 buffer_size = len(agent.replay_buffer)
                 print(f"Step {global_step}/{total_steps} | "
                       f"Buffer: {buffer_size} | "
@@ -250,7 +265,7 @@ def train(config: dict):
                 save_checkpoint(agent, config, global_step)
         
         # Log episode
-        epsilon = agent.epsilon_schedule.get_epsilon(global_step)
+        epsilon = agent.get_epsilon()
         logger.log_episode(
             episode_reward=episode_reward,
             episode_length=episode_length,

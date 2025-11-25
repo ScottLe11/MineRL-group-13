@@ -84,12 +84,11 @@ ppo:
 algorithm: "dqn"                     # "dqn" or "ppo"
 
 # =============================================================================
-# REWARD SHAPING
+# REWARD
 # =============================================================================
 rewards:
-  wood_collected: 1.0                # Reward per wood collected
-  step_penalty: -0.001               # Penalty per step
-  # Note: No crafting rewards per design decision
+  wood_value: 1.0                    # Points per log mined
+  step_penalty: -0.001               # Penalty per frame (encourages speed)
 
 # =============================================================================
 # HARDWARE

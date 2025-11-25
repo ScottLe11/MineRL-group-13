@@ -1,252 +1,273 @@
 # MineRL Tree-Chopping Deep RL Agent
 
-**Project Status**: ✅ Planning Complete - Ready for Implementation
-**Timeline**: 1.5 weeks (12 days)
-**Team**: 3 students, 3 machines (2 M1 Macs 8GB, 1 Windows 32GB GPU)
+**Project Status**: ✅ Core Implementation Complete - Ready for Testing
+**Timeline**: 1.5 weeks
+**Algorithms**: DQN (Double Dueling) and PPO
 
 ---
 
 ## 🎯 Project Goal
 
-Build a Deep Reinforcement Learning agent that learns to **efficiently chop trees in Minecraft** within 60-second episodes.
-
-**Core Challenge**: Agent must learn to:
-1. Navigate to trees
-2. Mine wood with fists (slow)
-3. *Stretch goal*: Craft and use wooden axe (2× faster mining)
+Build a Deep Reinforcement Learning agent that learns to **efficiently chop trees in Minecraft** within episodes.
 
 **Success Criteria**: 
-- Consistently collects wood in 60-second episodes (>80% success rate)
-- Stretch: Learns to craft axe for efficiency
+- Consistently collects wood (>80% success rate)
+- Stretch goal: Learns to craft and use wooden axe (2× faster mining)
 
+---
 
-## 🏗️ System Overview
+## 🚀 Quick Start
 
-### High-Level Architecture
+### Prerequisites
+- Python 3.10
+- Java JDK 8 (required for MineRL)
+
+### Installation
+```bash
+# Create environment
+conda create -n minerl-env python=3.10
+conda activate minerl-env
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install MineRL v1.0.2 from GitHub
+pip install git+https://github.com/minerllabs/minerl@v1.0.2
 ```
-User/Script → Config → Trainer → (Environment, Agent, Logger, Evaluator)
-                                        ↓         ↓
-                                   (Wrappers)  (Q-Network, Replay Buffer)
+
+### Run Training
+```bash
+# DQN training (default)
+python scripts/train.py
+
+# With custom config
+python scripts/train.py --config config/config.yaml
 ```
 
-### Key Components
+### Run Tests
+```bash
+pytest tests/ -v
+```
 
-**Environment** (`environment/`):
-- MineRL base + custom wrappers
-- 23 discrete actions (primitives, camera, macros)
-- Observations: visual (4×64×64) + scalars (time, yaw, pitch)
-- Reward: wood collection (+1.0) + step penalty (-0.001)
-
-**Actions** (`actions/`):
-- 7 primitives (noop, movement, attack) - 4 frames each
-- 12 camera (turn, look) - 4 frames each
-- 4 macros (craft planks/sticks/table/axe) - 8-12 frames
-
-**Networks** (`networks/`):
-- 5 CNN architectures (tiny → deep)
-- Dueling DQN head (value + advantage)
-- Optional spatial attention
-
-**Algorithm** (`algorithms/dqn/`):
-- Double DQN (reduce overestimation)
-- Replay buffer (100K capacity)
-- Epsilon-greedy exploration
-- Soft target network updates
-
-**Training** (`training/`):
-- Phase 1: Reconnaissance (40 configs, 200 episodes, 20s)
-- Phase 2: Validation (3-5 configs, 1000 episodes, 60s)
-- Phase 3: Final training (best config, 3000-5000 episodes, Gorila)
+### Evaluate a Checkpoint
+```bash
+python scripts/evaluate.py --checkpoint checkpoints/final_model.pt --episodes 10
+```
 
 ---
 
-## 🔑 Key Design Decisions
+## 📁 Project Structure
 
-> **See [`IMPLEMENTATION_DECISIONS.md`](IMPLEMENTATION_DECISIONS.md) for complete details**
-
-### Critical Choices
-
-1. **Temporal Abstraction**: 1 decision = 4 frames = 200ms
-   - Agent decides at 5 Hz, MineRL runs at 20 Hz
-   - ONE experience per decision (not per frame)
-
-2. **Observation Space**: Visual + 3 Scalars
-   - Visual: (4, 64, 64) grayscale stacked frames
-   - Scalars: time_left, yaw, pitch
-   - **NO inventory** (learns from visual hotbar)
-
-3. **Reward Function**: Wood Only
-   - +1.0 per wood collected
-   - -0.001 per step
-   - **NO crafting sub-rewards** (learns instrumental value)
-
-4. **Macro Behavior**: Always Execute
-   - Macros run full sequence even without materials
-   - Agent learns through experience not to craft without items
-
-5. **Action Space**: 23 Actions
-   - 0-6: Primitives (movement, attack)
-   - 7-18: Camera (turn/look)
-   - 19-22: Crafting macros
-
----
-
-## 📊 Three-Phase Training
-
-### Phase 1: Reconnaissance (Days 2-3)
-- **Goal**: Find 8 configs that get 1+ wood
-- **Method**: 40 configs × 200 episodes × 20s
-- **Execution**: 3 machines parallel (overnight)
-- **Output**: Comparison CSV, select top 3-5
-
-### Phase 2: Validation (Days 4-5)
-- **Goal**: Confirm configs work on 60s episodes
-- **Method**: 3-5 configs × 1000 episodes × 60s
-- **Execution**: Windows machine sequential
-- **Output**: Best config identified
-
-### Phase 3: Final Training (Days 6-9)
-- **Goal**: Train to convergence
-- **Method**: Best config × 3000-5000 episodes × 60s
-- **Execution**: Gorila distributed (4 actors, 2 learners)
-- **Output**: Final model, videos, analysis
+```
+MineRL-group-13/
+├── config/
+│   └── config.yaml              # All hyperparameters (DQN + PPO)
+│
+├── wrappers/                    # Environment wrappers
+│   ├── vision.py                # Frame stacking (84x84 grayscale)
+│   ├── hold_attack.py           # Attack duration handling
+│   ├── reward.py                # Reward scaling
+│   ├── observation.py           # Time/yaw/pitch scalars
+│   └── actions.py               # 23 discrete actions
+│
+├── networks/                    # Neural network architectures
+│   ├── cnn.py                   # SmallCNN (84x84 → 512 features)
+│   ├── dueling_head.py          # Dueling Q-value head
+│   ├── dqn_network.py           # Full DQN network
+│   └── policy_network.py        # Actor-Critic for PPO
+│
+├── agent/                       # RL agents
+│   ├── replay_buffer.py         # Experience replay (DQN)
+│   ├── dqn.py                   # Double DQN agent
+│   └── ppo.py                   # PPO agent with GAE
+│
+├── utils/                       # Utilities
+│   ├── config.py                # Config loader
+│   └── logger.py                # TensorBoard logging
+│
+├── scripts/                     # Entry points
+│   ├── train.py                 # Training script
+│   └── evaluate.py              # Evaluation script
+│
+├── crafting/                    # Tested crafting macros
+│   ├── crafting_guide.py        # Craft planks/sticks/table/axe
+│   └── gui_clicker.py           # GUI interaction helper
+│
+├── tests/                       # Unit tests (47 tests)
+│   ├── test_networks.py
+│   ├── test_agent.py
+│   └── test_wrappers.py
+│
+└── main.py                      # Original demo/reference
+```
 
 ---
 
-## 🎯 Success Metrics
+## 🔧 Configuration
 
-### Phase 1 (Recon)
-- ✅ At least 5 configs show learning
-- ✅ Gets wood in >80% episodes
+All settings in `config/config.yaml`:
 
-### Phase 2 (Validation)
-- ✅ Best config gets wood consistently in all episodes
-- ✅ Stable learning curve
+```yaml
+algorithm: "dqn"                  # "dqn" or "ppo"
 
-### Phase 3 (Final)
-- ✅ Final agent gets 20+ wood each episodes
-- 🎁 Stretch: Agent learns to craft & use axe
+environment:
+  frame_shape: [84, 84]           # Grayscale frame size
+  max_steps: 8000                 # Max steps per episode
 
-### Comparison to Baseline
-- Random agent: ~0.3% success rate (60s episodes)
-- Expected: >80% success rate (267× better!)
+dqn:
+  num_actions: 23                 # Total discrete actions
+  learning_rate: 0.0001
+  gamma: 0.99
+  batch_size: 32
+  replay_buffer:
+    capacity: 100000
+    min_size: 10000
+
+rewards:
+  wood_value: 1.0                 # Points per log
+  step_penalty: -0.001            # -0.001 per frame
+
+device: "auto"                    # cpu, cuda, mps, or auto
+```
 
 ---
 
-## 🗓️ Timeline
+## 🎮 Action Space (23 Actions)
 
-| Days | Phase | Activities |
-|------|-------|-----------|
-| **1-2** | Infrastructure | Build modules, tests, configs |
-| **2-3** | Recon | Run 40 configs on 3 machines |
-| **4** | Analysis | Compare results, select top configs |
-| **4-5** | Validation | Validate on 60s episodes |
-| **6-9** | Final Training | Train best config with Gorila |
-| **10-11** | Analysis | Generate visualizations, report |
-| **12** | Buffer | Polish, fix issues |
+| Index | Action | Frames | Description |
+|-------|--------|--------|-------------|
+| 0 | noop | 4 | Do nothing |
+| 1-4 | movement | 4 | forward, back, right, left |
+| 5 | jump | 4 | Jump |
+| 6 | attack | 4 | Attack/mine |
+| 7-10 | turn_left | 4 | 30°, 45°, 60°, 90° |
+| 11-14 | turn_right | 4 | 30°, 45°, 60°, 90° |
+| 15-16 | look_up | 4 | 12°, 20° |
+| 17-18 | look_down | 4 | 12°, 20° |
+| 19 | craft_planks | ~50 | Logs → Planks |
+| 20 | make_table | ~100 | Craft + place table |
+| 21 | craft_sticks | ~50 | Planks → Sticks |
+| 22 | craft_axe | ~100 | Craft + equip axe |
 
-**Current Status**: End of Day 1 → Day 2 (Infrastructure)
+---
+
+## 🧠 Observation Space
+
+| Component | Shape | Description |
+|-----------|-------|-------------|
+| pov | (4, 84, 84) | Stacked grayscale frames |
+| time | (1,) | Normalized time remaining [0, 1] |
+| yaw | (1,) | Horizontal rotation [-1, 1] |
+| pitch | (1,) | Vertical rotation [-1, 1] |
+
+---
+
+## 💰 Reward Function
+
+```
+reward_per_frame = (logs × wood_value) + step_penalty
+```
+
+- **wood_value** points per log (default: 1.0)
+- **step_penalty** per MineRL frame (default: -0.001, so -0.004 per decision)
+
+**Example**: Mine 1 log over 4 frames = `(1 × 1.0) + (-0.001 × 4) = +0.996`
+
+---
+
+## 🔄 Wrapper Stack
+
+```
+MineRL Base Environment
+    ↓
+StackAndProcessWrapper (84x84 grayscale, 4 frames)
+    ↓
+HoldAttackWrapper (attack duration)
+    ↓
+RewardWrapper (add step penalty)
+    ↓
+ObservationWrapper (time, yaw, pitch)
+    ↓
+ExtendedActionWrapper (23 discrete actions)
+    ↓
+Agent
+```
+
+---
+
+## 📊 Algorithms
+
+### DQN (Default)
+- Double DQN (reduces overestimation)
+- Dueling architecture (value + advantage streams)
+- Experience replay (100K buffer)
+- Epsilon-greedy exploration (1.0 → 0.1)
+- Soft target updates (τ = 0.005)
+
+### PPO (Alternative)
+- Clipped surrogate objective (ε = 0.2)
+- GAE advantage estimation (λ = 0.95)
+- Entropy bonus (0.01)
+- Rollout buffer (2048 steps)
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_networks.py -v
+
+# Run with coverage
+pytest tests/ --cov=.
+```
+
+**Test coverage**:
+- 47 tests across networks, agent, and wrappers
+- Network dimensions, gradient flow, soft updates
+- Replay buffer, epsilon schedule, training steps
+- Observation wrapper, action wrapper, reward shaping
+
+---
+
+## 📈 Training Flow
+
+1. **Initialize**: Load config, create environment, create agent
+2. **Collect**: Agent selects action → env.step() → store experience
+3. **Train**: Sample batch → compute loss → update network
+4. **Log**: TensorBoard metrics (loss, Q-values, rewards)
+5. **Save**: Periodic checkpoints
+
+---
+
+## 🔍 Key Design Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Frame size | 84×84 | Atari standard, good balance |
+| Frame stack | 4 | Motion/temporal information |
+| Step penalty | Once per decision | Not 4× per frame |
+| Macros | Always execute | Learn through experience |
+| Inventory | Not observed | Learn from visual hotbar |
+
+---
+
+## 📚 Architecture Document
+
+See `REVISED_ARCHITECTURE.md` for detailed implementation plan.
 
 ---
 
 ## 🛠️ Technology Stack
 
-**Core**:
-- MineRL 1.0 (Minecraft environment)
-- PyTorch (deep learning)
-- OpenCV (image processing)
-
-**RL Algorithm**:
-- Double DQN with Dueling Architecture
-- Experience Replay (100K capacity)
-- Epsilon-greedy exploration
-
-**Infrastructure**:
-- TensorBoard (monitoring)
-- YAML (configuration)
-- pytest (testing)
-
-**Optional**:
-- Gorila distributed training (Phase 3)
-- Human demonstrations (behavior cloning)
-- Curriculum learning
-
----
-
-## 🔍 Key Features
-
-### Temporal Abstraction
-- Agent makes decisions every 200ms (not every 50ms frame)
-- Reduces action space complexity
-- Enables macro actions (crafting sequences)
-
-### Dueling DQN Architecture
-- Separates value (how good is state) from advantage (how good is action)
-- More stable learning
-- Better generalization
-
-### Double DQN
-- Reduces Q-value overestimation
-- Selects action with online network
-- Evaluates with target network
-
-### Optional: Gorila Distributed Training
-- 4 parallel actors generate experiences
-- 2 learners compute gradients
-- 1 parameter server coordinates updates
-- 3-4× speedup over single agent
-
----
-
-## 🎓 Learning Challenges
-
-### Why This is Hard
-1. **Sparse Rewards**: Only get reward when collecting wood
-2. **Long Horizons**: 300 decisions per episode (60s)
-3. **Visual Input**: Must learn from pixels
-4. **Instrumental Learning**: Must discover crafting helps mining
-5. **Exploration**: Vast action/state space
-
-### How We Address It
-1. **Step Penalty**: Encourages faster wood collection
-2. **Frame Stacking**: Provides motion/temporal info
-3. **CNN Features**: Learns visual representations
-4. **Large Replay Buffer**: Learns from past experiences
-5. **Epsilon Decay**: Gradual exploration→exploitation
-
----
-
-## 🤝 Contributing
-
-### For Team Members
-
-**Implementing a module?**
-1. Read relevant section in `PROJECT_ARCHITECTURE.md`
-2. Check `IMPLEMENTATION_DECISIONS.md` for design choices
-3. Use `MODULE_SPEC_TEMPLATE.md` for detailed design
-4. Write tests in `tests/`
-5. Update `MODULE_CHECKLIST.md` when complete
-
-**Stuck?**
-1. Check documentation (especially COMPONENT_INTERACTIONS.md)
-2. Run relevant tests
-3. Ask in team channel with details (error messages, what you tried)
-
----
-
-## 📖 References
-
-### Papers
-- DQN: [Mnih et al. 2015](https://www.nature.com/articles/nature14236)
-- Double DQN: [van Hasselt et al. 2015](https://arxiv.org/abs/1509.06461)
-- Dueling DQN: [Wang et al. 2015](https://arxiv.org/abs/1511.06581)
-- Prioritized Replay: [Schaul et al. 2015](https://arxiv.org/abs/1511.05952)
-- Gorila: [Nair et al. 2015](https://arxiv.org/abs/1507.04296)
-
-### Documentation
-- MineRL: https://minerl.readthedocs.io/en/v1.0/
-- PyTorch: https://pytorch.org/docs/
-- OpenAI Gym: https://www.gymlibrary.dev/
+- **MineRL 1.0.2** - Minecraft environment
+- **PyTorch** - Deep learning
+- **OpenCV** - Image processing
+- **TensorBoard** - Monitoring
+- **pytest** - Testing
 
 ---
 
@@ -256,15 +277,4 @@ User/Script → Config → Trainer → (Environment, Agent, Logger, Evaluator)
 
 ---
 
-## 🎉 Status
-
-**✅ Planning Complete** (2025-11-24)
-- All design decisions finalized
-- Architecture documented
-- Ready for implementation
-
-
----
-
-**Let's build this! 🚀🌳**
-
+**Ready to train! 🚀🌳**

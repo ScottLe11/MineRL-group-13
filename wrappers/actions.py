@@ -98,7 +98,7 @@ class ExtendedActionWrapper(ActionWrapper):
     Extended action wrapper with 23 discrete actions.
     
     Each action executes for 4 MineRL frames (200ms at 20Hz).
-    Rewards are accumulated across frames.
+    Rewards are accumulated across frames (step penalty already applied per frame by RewardWrapper).
     Camera movements are tracked for the ObservationWrapper.
     """
     
@@ -168,7 +168,7 @@ class ExtendedActionWrapper(ActionWrapper):
         
         for _ in range(FRAMES_PER_ACTION):
             obs, reward, done, info = self.env.step(action_dict)
-            total_reward += reward
+            total_reward += reward  # Includes step penalty from RewardWrapper
             if done:
                 break
         

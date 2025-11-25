@@ -71,8 +71,8 @@ def create_env(config: dict):
     env = HoldAttackWrapper(env)
     env = RewardWrapper(
         env,
-        step_penalty=reward_config.get('step_penalty', -0.001),
-        wood_reward_scale=reward_config.get('wood_collected', 1.0)
+        wood_value=reward_config.get('wood_value', 1.0),
+        step_penalty=reward_config.get('step_penalty', -0.001)
     )
     env = ObservationWrapper(env, max_steps=env_config['max_steps'])
     env = ExtendedActionWrapper(env)
@@ -84,7 +84,7 @@ def create_mock_env(env_config: dict, reward_config: dict = None):
     """Create a mock environment for testing without MineRL installed."""
     
     if reward_config is None:
-        reward_config = {'step_penalty': -0.001, 'wood_collected': 1.0}
+        reward_config = {'wood_value': 1.0, 'step_penalty': -0.001}
     
     class MockMineRLEnv:
         """Mock environment that mimics the wrapped MineRL interface."""
@@ -92,8 +92,8 @@ def create_mock_env(env_config: dict, reward_config: dict = None):
         def __init__(self, config, rewards):
             self.max_steps = config['max_steps']
             self.frame_shape = tuple(config['frame_shape'])
+            self.wood_value = rewards.get('wood_value', 1.0)
             self.step_penalty = rewards.get('step_penalty', -0.001)
-            self.wood_scale = rewards.get('wood_collected', 1.0)
             self.current_step = 0
             
             # Observation space matches ObservationWrapper output
@@ -127,16 +127,12 @@ def create_mock_env(env_config: dict, reward_config: dict = None):
                 'pitch': np.array([0.0], dtype=np.float32),
             }
             
-            # Mock reward: step penalty + occasional wood collection
-            wood_collected = 1 if random.random() < 0.01 else 0  # 1% chance
-            reward = self.step_penalty + (wood_collected * self.wood_scale)
+            # Mock reward: log × wood_value + step penalty
+            logs = 1 if random.random() < 0.01 else 0  # 1% chance
+            reward = (logs * self.wood_value) + self.step_penalty
             
             done = self.current_step >= self.max_steps
-            info = {
-                'wood_collected': wood_collected,
-                'raw_reward': wood_collected * self.wood_scale,
-                'shaped_reward': reward,
-            }
+            info = {'wood_this_frame': logs}
             
             return obs, reward, done, info
         
@@ -237,7 +233,7 @@ def train(config: dict):
             obs = next_obs
             episode_reward += reward
             episode_length += 1
-            episode_wood += info.get('wood_collected', 0)
+            episode_wood += info.get('wood_this_frame', 0)
             global_step += 1
             logger.set_step(global_step)
             

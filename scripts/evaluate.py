@@ -88,7 +88,7 @@ def evaluate_episode(env, network, device: str, render: bool = False):
         
         total_reward += reward
         episode_length += 1
-        wood_collected += info.get('wood_collected', 0)
+        wood_collected += info.get('wood_this_frame', 0)
         
         if render:
             env.render()

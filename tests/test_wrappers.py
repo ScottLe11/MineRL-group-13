@@ -27,7 +27,7 @@ from wrappers.actions import (
 class MockBaseEnv:
     """Mock environment for testing wrappers."""
     
-    def __init__(self, frame_shape=(64, 64)):
+    def __init__(self, frame_shape=(84, 84)):
         self.frame_shape = frame_shape
         self.observation_space = gym.spaces.Dict({
             'pov': gym.spaces.Box(low=0, high=255, shape=(4, *frame_shape), dtype=np.uint8)
@@ -142,7 +142,7 @@ class TestObservationWrapper:
         
         obs = wrapped.reset()
         
-        assert obs['pov'].shape == (4, 64, 64)
+        assert obs['pov'].shape == (4, 84, 84)
         assert obs['pov'].dtype == np.uint8
 
 

@@ -32,7 +32,7 @@ class TestReplayBuffer:
         buffer = ReplayBuffer(capacity=100, min_size=10)
         
         for i in range(15):
-            state = {'pov': np.zeros((4, 64, 64)), 'time': 0.5, 'yaw': 0.0, 'pitch': 0.0}
+            state = {'pov': np.zeros((4, 84, 84)), 'time': 0.5, 'yaw': 0.0, 'pitch': 0.0}
             buffer.add(state, action=i % 8, reward=-0.001, next_state=state, done=False)
         
         assert len(buffer) == 15
@@ -43,7 +43,7 @@ class TestReplayBuffer:
         buffer = ReplayBuffer(capacity=10, min_size=5)
         
         for i in range(20):
-            state = {'pov': np.zeros((4, 64, 64)), 'time': 0.5, 'yaw': 0.0, 'pitch': 0.0}
+            state = {'pov': np.zeros((4, 84, 84)), 'time': 0.5, 'yaw': 0.0, 'pitch': 0.0}
             buffer.add(state, action=0, reward=0, next_state=state, done=False)
         
         assert len(buffer) == 10  # Should be capped at capacity
@@ -53,8 +53,8 @@ class TestReplayBuffer:
         buffer = ReplayBuffer(capacity=100, min_size=10)
         
         for i in range(20):
-            state = {'pov': np.random.rand(4, 64, 64), 'time': 0.5, 'yaw': float(i), 'pitch': 0.0}
-            next_state = {'pov': np.random.rand(4, 64, 64), 'time': 0.4, 'yaw': float(i+1), 'pitch': 0.0}
+            state = {'pov': np.random.rand(4, 84, 84), 'time': 0.5, 'yaw': float(i), 'pitch': 0.0}
+            next_state = {'pov': np.random.rand(4, 84, 84), 'time': 0.4, 'yaw': float(i+1), 'pitch': 0.0}
             buffer.add(state, action=i % 8, reward=-0.001, next_state=next_state, done=(i == 19))
         
         states, actions, rewards, next_states, dones = buffer.sample(batch_size=5)
@@ -70,7 +70,7 @@ class TestReplayBuffer:
         buffer = ReplayBuffer(capacity=100, min_size=10)
         
         for i in range(5):
-            state = {'pov': np.zeros((4, 64, 64)), 'time': 0.5, 'yaw': 0.0, 'pitch': 0.0}
+            state = {'pov': np.zeros((4, 84, 84)), 'time': 0.5, 'yaw': 0.0, 'pitch': 0.0}
             buffer.add(state, action=0, reward=0, next_state=state, done=False)
         
         assert buffer.is_ready() is False
@@ -132,7 +132,7 @@ class TestDQNAgent:
         )
         
         obs = {
-            'pov': np.zeros((4, 64, 64), dtype=np.uint8),
+            'pov': np.zeros((4, 84, 84), dtype=np.uint8),
             'time': 1.0,
             'yaw': 0.0,
             'pitch': 0.0,
@@ -154,8 +154,8 @@ class TestDQNAgent:
             device='cpu'
         )
         
-        state = {'pov': np.zeros((4, 64, 64)), 'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
-        next_state = {'pov': np.zeros((4, 64, 64)), 'time': 0.9, 'yaw': 0.0, 'pitch': 0.0}
+        state = {'pov': np.zeros((4, 84, 84)), 'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
+        next_state = {'pov': np.zeros((4, 84, 84)), 'time': 0.9, 'yaw': 0.0, 'pitch': 0.0}
         
         agent.store_experience(state, action=0, reward=-0.001, next_state=next_state, done=False)
         
@@ -173,9 +173,9 @@ class TestDQNAgent:
         
         # Fill buffer beyond min_size
         for i in range(15):
-            state = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8), 
+            state = {'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8), 
                      'time': 1.0 - i*0.01, 'yaw': 0.0, 'pitch': 0.0}
-            next_state = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8), 
+            next_state = {'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8), 
                           'time': 0.99 - i*0.01, 'yaw': 0.0, 'pitch': 0.0}
             agent.store_experience(state, action=i % 8, reward=-0.001, next_state=next_state, done=False)
         
@@ -198,7 +198,7 @@ class TestDQNAgent:
         
         # Add only a few experiences (less than min_size)
         for i in range(5):
-            state = {'pov': np.zeros((4, 64, 64)), 'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
+            state = {'pov': np.zeros((4, 84, 84)), 'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
             agent.store_experience(state, action=0, reward=0, next_state=state, done=False)
         
         metrics = agent.train_step()
@@ -223,7 +223,7 @@ class TestAgentIntegration:
         )
         
         # Simulate episode
-        obs = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+        obs = {'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
                'time': 1.0, 'yaw': 0.0, 'pitch': 0.0}
         
         total_reward = 0
@@ -231,7 +231,7 @@ class TestAgentIntegration:
             action = agent.select_action(obs, explore=True)
             
             # Simulate environment response
-            next_obs = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+            next_obs = {'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
                         'time': max(0, 1.0 - step * 0.02), 'yaw': 0.0, 'pitch': 0.0}
             reward = -0.001
             done = (step == 49)

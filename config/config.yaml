@@ -7,7 +7,7 @@
 environment:
   name: "MineRLcustom_treechop-v0"
   max_steps: 8000                    # Max steps per episode
-  frame_shape: [64, 64]              # Grayscale frame size
+  frame_shape: [84, 84]              # Grayscale frame size (matches Atari standard)
   frame_stack: 4                     # Number of stacked frames
 
 # =============================================================================

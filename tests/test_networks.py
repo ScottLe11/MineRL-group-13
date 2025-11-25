@@ -24,7 +24,7 @@ class TestSmallCNN:
     def test_output_shape(self):
         """CNN should output (batch, 512) features."""
         cnn = SmallCNN(input_channels=4)
-        x = torch.randn(2, 4, 64, 64)
+        x = torch.randn(2, 4, 84, 84)
         output = cnn(x)
         
         assert output.shape == (2, 512), f"Expected (2, 512), got {output.shape}"
@@ -32,7 +32,7 @@ class TestSmallCNN:
     def test_single_sample(self):
         """CNN should handle batch size 1."""
         cnn = SmallCNN(input_channels=4)
-        x = torch.randn(1, 4, 64, 64)
+        x = torch.randn(1, 4, 84, 84)
         output = cnn(x)
         
         assert output.shape == (1, 512)
@@ -41,7 +41,7 @@ class TestSmallCNN:
         """CNN should accept different input channel counts."""
         for channels in [1, 3, 4, 8]:
             cnn = SmallCNN(input_channels=channels)
-            x = torch.randn(2, channels, 64, 64)
+            x = torch.randn(2, channels, 84, 84)
             output = cnn(x)
             
             assert output.shape == (2, 512), f"Failed for {channels} channels"
@@ -49,7 +49,7 @@ class TestSmallCNN:
     def test_gradient_flow(self):
         """Gradients should flow through the CNN."""
         cnn = SmallCNN(input_channels=4)
-        x = torch.randn(2, 4, 64, 64, requires_grad=True)
+        x = torch.randn(2, 4, 84, 84, requires_grad=True)
         output = cnn(x)
         loss = output.sum()
         loss.backward()
@@ -102,7 +102,7 @@ class TestDQNNetwork:
         network = DQNNetwork(input_channels=4, num_actions=23)
         
         obs = {
-            'pov': torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.uint8),
+            'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
             'time': torch.tensor([0.8, 0.5], dtype=torch.float32),
             'yaw': torch.tensor([0.0, 45.0], dtype=torch.float32),
             'pitch': torch.tensor([0.0, -10.0], dtype=torch.float32),
@@ -118,7 +118,7 @@ class TestDQNNetwork:
         
         # Max value POV
         obs = {
-            'pov': torch.full((1, 4, 64, 64), 255, dtype=torch.uint8),
+            'pov': torch.full((1, 4, 84, 84), 255, dtype=torch.uint8),
             'time': torch.tensor([1.0]),
             'yaw': torch.tensor([0.0]),
             'pitch': torch.tensor([0.0]),
@@ -134,7 +134,7 @@ class TestDQNNetwork:
         
         # Shape (batch,)
         obs1 = {
-            'pov': torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.uint8),
+            'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
             'time': torch.tensor([0.5, 0.3]),
             'yaw': torch.tensor([0.0, 45.0]),
             'pitch': torch.tensor([0.0, -10.0]),
@@ -143,7 +143,7 @@ class TestDQNNetwork:
         
         # Shape (batch, 1)
         obs2 = {
-            'pov': torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.uint8),
+            'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
             'time': torch.tensor([[0.5], [0.3]]),
             'yaw': torch.tensor([[0.0], [45.0]]),
             'pitch': torch.tensor([[0.0], [-10.0]]),
@@ -157,7 +157,7 @@ class TestDQNNetwork:
         network = DQNNetwork(input_channels=4, num_actions=8)
         
         obs = {
-            'pov': torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.uint8),
+            'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
             'time': torch.tensor([0.5, 0.3], requires_grad=True),
             'yaw': torch.tensor([0.0, 45.0], requires_grad=True),
             'pitch': torch.tensor([0.0, -10.0], requires_grad=True),
@@ -185,7 +185,7 @@ class TestNetworkIntegration:
         
         # Same input should produce same output
         obs = {
-            'pov': torch.randint(0, 256, (1, 4, 64, 64), dtype=torch.uint8),
+            'pov': torch.randint(0, 256, (1, 4, 84, 84), dtype=torch.uint8),
             'time': torch.tensor([0.5]),
             'yaw': torch.tensor([0.0]),
             'pitch': torch.tensor([0.0]),

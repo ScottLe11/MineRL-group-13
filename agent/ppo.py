@@ -359,7 +359,7 @@ if __name__ == "__main__":
     # Generate fake rollout
     print("\n  Collecting rollout...")
     state = {
-        'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+        'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
         'time': 1.0,
         'yaw': 0.0,
         'pitch': 0.0
@@ -373,7 +373,7 @@ if __name__ == "__main__":
         agent.store_transition(state, action, log_prob, reward, value, done)
         
         state = {
-            'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+            'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
             'time': 1.0 - i / 64,
             'yaw': 0.0,
             'pitch': 0.0

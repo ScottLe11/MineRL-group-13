@@ -282,14 +282,14 @@ if __name__ == "__main__":
     print("\n  Filling replay buffer...")
     for i in range(20):
         state = {
-            'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+            'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
             'time': float(i) / 20,
             'yaw': 0.0,
             'pitch': 0.0
         }
         action = agent.select_action(state, explore=True)
         next_state = {
-            'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+            'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
             'time': float(i + 1) / 20,
             'yaw': 0.0,
             'pitch': 0.0
@@ -309,7 +309,7 @@ if __name__ == "__main__":
     # Test action selection
     print("\n  Testing action selection...")
     state = {
-        'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8),
+        'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
         'time': 0.5,
         'yaw': 0.0,
         'pitch': 0.0

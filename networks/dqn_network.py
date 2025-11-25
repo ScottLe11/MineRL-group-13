@@ -14,13 +14,13 @@ class DQNNetwork(nn.Module):
     Complete DQN network for MineRL tree-chopping task.
     
     Architecture:
-        Visual Input (4, 64, 64) -> SmallCNN -> (512,)
+        Visual Input (4, 84, 84) -> SmallCNN -> (512,)
         Scalar Input (3,) -> concat -> (515,)
         Combined -> DuelingHead -> Q-values (23,)
     
     Observation format expected:
         {
-            'pov': (batch, 4, 64, 64) uint8 or float,
+            'pov': (batch, 4, 84, 84) uint8 or float,
             'time': (batch,) or (batch, 1) float,
             'yaw': (batch,) or (batch, 1) float,
             'pitch': (batch,) or (batch, 1) float
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     # Test with dict observation
     print("\n  Testing with dict observation...")
     obs = {
-        'pov': torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.float32),
+        'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.float32),
         'time': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([45.0, -30.0]),
         'pitch': torch.tensor([0.0, 10.0])
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     
     # Test with tensor only
     print("\n  Testing with tensor only...")
-    pov_only = torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.float32)
+    pov_only = torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.float32)
     q_values = network(pov_only)
     print(f"    Input shape: {pov_only.shape}")
     print(f"    Output shape: {q_values.shape}")
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     # Test action selection
     print("\n  Testing action selection...")
     single_obs = {
-        'pov': torch.randint(0, 256, (4, 64, 64), dtype=torch.float32),
+        'pov': torch.randint(0, 256, (4, 84, 84), dtype=torch.float32),
         'time': torch.tensor(0.5),
         'yaw': torch.tensor(0.0),
         'pitch': torch.tensor(0.0)

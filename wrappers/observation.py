@@ -111,18 +111,18 @@ if __name__ == "__main__":
     class MockEnv:
         def __init__(self):
             self.observation_space = gym.spaces.Dict({
-                'pov': gym.spaces.Box(low=0, high=255, shape=(4, 64, 64), dtype=np.uint8)
+                'pov': gym.spaces.Box(low=0, high=255, shape=(4, 84, 84), dtype=np.uint8)
             })
             self.action_space = gym.spaces.Discrete(23)
             self.step_count = 0
         
         def reset(self):
             self.step_count = 0
-            return {'pov': np.zeros((4, 64, 64), dtype=np.uint8)}
+            return {'pov': np.zeros((4, 84, 84), dtype=np.uint8)}
         
         def step(self, action):
             self.step_count += 1
-            obs = {'pov': np.random.randint(0, 256, (4, 64, 64), dtype=np.uint8)}
+            obs = {'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8)}
             reward = -0.001
             done = self.step_count >= 100
             return obs, reward, done, {}

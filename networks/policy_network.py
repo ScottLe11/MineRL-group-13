@@ -143,7 +143,7 @@ if __name__ == "__main__":
     
     # Test forward pass
     obs = {
-        'pov': torch.randint(0, 256, (2, 4, 64, 64), dtype=torch.uint8),
+        'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
         'time': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([0.0, 0.5]),
         'pitch': torch.tensor([0.0, -0.2]),

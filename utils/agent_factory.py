@@ -87,8 +87,12 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
     ppo_config = config['ppo']
     network_config = config['network']
 
-    # Log network info (PPO uses ActorCriticNetwork, not configurable CNN)
-    print(f"PPO network: ActorCritic with {network_config['input_channels']} input channels")
+    # Log network architecture choice (now PPO supports configurable CNNs!)
+    arch_name = network_config.get('architecture', 'small')
+    attention_type = network_config.get('attention', 'none')
+    arch_info = get_architecture_info().get(arch_name, {})
+    print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
+    print(f"Attention mechanism: {attention_type}")
 
     agent = PPOAgent(
         num_actions=num_actions,
@@ -104,6 +108,9 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
         n_steps=ppo_config['n_steps'],
         n_epochs=ppo_config['n_epochs'],
         batch_size=ppo_config['batch_size'],
+        # Network architecture (now configurable!)
+        cnn_architecture=arch_name,
+        attention_type=attention_type,
         device=config['device']
     )
 

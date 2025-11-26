@@ -39,9 +39,11 @@ class Treechop(HumanControlEnvSpec):
         if 'name' not in kwargs:
             kwargs['name'] = 'MineRLTreechop-v0'
 
-        super().__init__(*args,
-                         max_episode_steps=TREECHOP_LENGTH, reward_threshold=64.0,
-                         **kwargs)
+        # Only set default max_episode_steps if not already provided
+        if 'max_episode_steps' not in kwargs:
+            kwargs['max_episode_steps'] = TREECHOP_LENGTH
+
+        super().__init__(*args, reward_threshold=64.0, **kwargs)
         
     def create_rewardables(self) -> List[Handler]:
         return [

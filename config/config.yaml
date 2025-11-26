@@ -11,7 +11,7 @@ environment:
   # - Each agent step = 4 frames = 200ms = 0.2 seconds
   # - So 1 second = 5 agent steps
   # - Recon: 20 seconds, Full: 60 seconds
-  episode_seconds: 20                # Episode duration (20s recon, 60s full)
+  episode_seconds: 30                # Episode duration (20s recon, 60s full)
   # max_steps is computed: episode_seconds * 5
   
   # Visual processing
@@ -33,7 +33,7 @@ network:
   # CNN Architecture selection
   # Options: 'tiny' (~150K), 'small' (~400K), 'medium' (~600K), 'wide' (~1M), 'deep' (~500K)
   # CNN output dimension is architecture-dependent (256 for tiny, 512 for others)
-  architecture: "small"              # Default: small (Atari DQN style, proven baseline)
+  architecture: "medium"              # Default: small (Atari DQN style, proven baseline)
 
   # Attention mechanism (optional)
   # Options: 'none', 'spatial', 'cbam', 'treechop_bias'
@@ -41,7 +41,7 @@ network:
   # - spatial: Pure spatial attention (learns where to look)
   # - cbam: Combined channel + spatial (full CBAM module, most comprehensive)
   # - treechop_bias: Spatial attention biased toward screen center and hotbar
-  attention: "spatial"
+  attention: "none"
   
 # =============================================================================
 # ACTION SPACE
@@ -65,7 +65,7 @@ action_space:
   # Custom action list (only used if preset is "custom")
   # Example: [0, 1, 2, 6, 7, 8, 23] would include only noop, forward, back,
   #          attack, turn_left_30, turn_left_45, and craft_entire_axe
-  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 13, 15, 17, 24, 25]
+  enabled_actions: [1, 8, 9, 12, 13, 15, 17, 25]
 
 # =============================================================================
 # DQN AGENT
@@ -74,15 +74,15 @@ dqn:
   num_actions: null                  # Auto-computed from action_space config
   
   # Learning
-  learning_rate: 0.0001              # Adam learning rate
+  learning_rate: 0.002              # Adam learning rate
   gamma: 0.99                        # Discount factor
-  batch_size: 32                     # Training batch size
+  batch_size: 64                     # Training batch size
   gradient_clip: 10.0                # Max gradient norm
   
   # Replay Buffer
   replay_buffer:
-    capacity: 100000                 # Buffer size (experiences)
-    min_size: 10000                  # Min experiences before training
+    capacity: 10000                 # Buffer size (experiences)
+    min_size: 600                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
   # NOTE: decay_steps is in AGENT STEPS, not episodes
@@ -97,7 +97,7 @@ dqn:
   target_update:
     method: "hard"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
-    hard_update_freq: 500           # Steps between hard updates (if hard)
+    hard_update_freq: 200           # Steps between hard updates (if hard)
   
   # Prioritized Experience Replay (optional)
   prioritized_replay:

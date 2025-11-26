@@ -73,7 +73,9 @@ class DQNNetwork(nn.Module):
                     conv_channels = last_conv.out_channels
                     if attention_type in ['cbam', 'channel']:
                         self.attention = create_attention(attention_type, channels=conv_channels)
-                    elif attention_type in ['spatial', 'treechop_bias']:
+                    elif attention_type == 'spatial':
+                        self.attention = create_attention(attention_type, kernel_size=7)
+                    elif attention_type == 'treechop_bias':
                         self.attention = create_attention(attention_type, height=7, width=7)
                     else:
                         self.attention = nn.Identity()

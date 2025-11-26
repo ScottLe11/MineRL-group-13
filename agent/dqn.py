@@ -77,6 +77,8 @@ class DQNAgent:
         per_alpha: float = 0.6,
         per_beta_start: float = 0.4,
         per_beta_end: float = 1.0,
+        cnn_architecture: str = 'small',
+        attention_type: str = 'none',
         device: str = None
     ):
         """
@@ -99,6 +101,8 @@ class DQNAgent:
             per_alpha: PER priority exponent (0=uniform, 1=full prioritization)
             per_beta_start: PER initial importance sampling exponent
             per_beta_end: PER final importance sampling exponent
+            cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
+            attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
             device: 'cuda', 'mps', 'cpu', or None for auto-detect
         """
         # Device setup
@@ -111,10 +115,22 @@ class DQNAgent:
                 device = 'cpu'
         self.device = torch.device(device)
         print(f"DQNAgent using device: {self.device}")
-        
+
         # Networks
-        self.q_network = DQNNetwork(num_actions, input_channels, num_scalars).to(self.device)
-        self.target_network = DQNNetwork(num_actions, input_channels, num_scalars).to(self.device)
+        self.q_network = DQNNetwork(
+            num_actions=num_actions,
+            input_channels=input_channels,
+            num_scalars=num_scalars,
+            cnn_architecture=cnn_architecture,
+            attention_type=attention_type
+        ).to(self.device)
+        self.target_network = DQNNetwork(
+            num_actions=num_actions,
+            input_channels=input_channels,
+            num_scalars=num_scalars,
+            cnn_architecture=cnn_architecture,
+            attention_type=attention_type
+        ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.target_network.eval()  # Target network is not trained
         
@@ -159,32 +175,65 @@ class DQNAgent:
         # Counters
         self.step_count = 0
         self.train_count = 0
+
+        # Action frequency tracking (for debugging)
+        self.action_counts = [0] * num_actions
+        self.last_actions = []  # Track last N actions
     
     def get_epsilon(self) -> float:
         """Get current epsilon value based on step count."""
         progress = min(1.0, self.step_count / self.epsilon_decay_steps)
         return self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
     
-    def select_action(self, state: Dict, explore: bool = True) -> int:
+    def select_action(self, state: Dict, explore: bool = True, debug: bool = False) -> int:
         """
         Select action using epsilon-greedy policy.
-        
+
         Args:
             state: Observation dict with 'pov', 'time', 'yaw', 'pitch'
             explore: Whether to use exploration (False for evaluation)
-        
+            debug: If True, print debugging info
+
         Returns:
-            action: Selected action index (0-22)
+            action: Selected action index
         """
         epsilon = self.get_epsilon() if explore else 0.0
-        
+
+        # Epsilon-greedy exploration
         if random.random() < epsilon:
-            return random.randint(0, self.num_actions - 1)
-        
-        with torch.no_grad():
-            state_tensor = self._state_to_tensor(state)
-            q_values = self.q_network(state_tensor)
-            return q_values.argmax(dim=1).item()
+            action = random.randint(0, self.num_actions - 1)
+            if debug and self.step_count % 100 == 0:
+                print(f"[DEBUG] Exploration: action={action}, epsilon={epsilon:.3f}, step={self.step_count}")
+        else:
+            # Greedy action selection
+            with torch.no_grad():
+                state_tensor = self._state_to_tensor(state)
+                q_values = self.q_network(state_tensor)
+                action = q_values.argmax(dim=1).item()
+                if debug and self.step_count % 100 == 0:
+                    print(f"[DEBUG] Greedy: action={action}, max_q={q_values.max().item():.3f}, epsilon={epsilon:.3f}, step={self.step_count}")
+
+        # Track action frequency
+        self.action_counts[action] += 1
+        self.last_actions.append(action)
+        if len(self.last_actions) > 100:  # Keep last 100
+            self.last_actions.pop(0)
+
+        return action
+
+    def get_action_stats(self) -> Dict:
+        """Get statistics about action selection."""
+        total = sum(self.action_counts)
+        if total == 0:
+            return {}
+
+        return {
+            'total_actions': total,
+            'action_counts': self.action_counts.copy(),
+            'action_frequencies': [count / total for count in self.action_counts],
+            'last_100_unique': len(set(self.last_actions)) if self.last_actions else 0,
+            'last_100_actions': self.last_actions.copy()
+        }
     
     def store_experience(self, state: Dict, action: int, reward: float, 
                         next_state: Dict, done: bool):
@@ -285,11 +334,16 @@ class DQNAgent:
     
     def _state_to_tensor(self, state: Dict) -> Dict:
         """Convert single state dict to batched tensor dict."""
+        # Extract scalars (handle both numpy arrays and python floats)
+        time_val = float(np.asarray(state.get('time', 0.0)).item())
+        yaw_val = float(np.asarray(state.get('yaw', 0.0)).item())
+        pitch_val = float(np.asarray(state.get('pitch', 0.0)).item())
+
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time': torch.tensor([state.get('time', 0.0)], dtype=torch.float32, device=self.device),
-            'yaw': torch.tensor([state.get('yaw', 0.0)], dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor([state.get('pitch', 0.0)], dtype=torch.float32, device=self.device)
+            'time': torch.tensor([time_val], dtype=torch.float32, device=self.device),
+            'yaw': torch.tensor([yaw_val], dtype=torch.float32, device=self.device),
+            'pitch': torch.tensor([pitch_val], dtype=torch.float32, device=self.device)
         }
     
     def _batch_states_to_tensor(self, states: list) -> Dict:

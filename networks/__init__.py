@@ -10,7 +10,13 @@ Available CNN architectures:
 - WideCNN:   ~1M params   - More filters per layer
 - DeepCNN:   ~500K params - More layers, deeper features
 
-Use create_cnn('name') factory function to create by name.
+Available attention modules:
+- SpatialAttention:     Learns where to focus spatially
+- ChannelAttention:     Learns which channels are important
+- CBAM:                 Combined channel + spatial attention
+- TreechopSpatialBias:  Spatial attention with center/hotbar bias
+
+Use create_cnn('name') and create_attention('type') factory functions.
 """
 
 from .cnn import (
@@ -22,6 +28,13 @@ from .cnn import (
     CNN_ARCHITECTURES,
     create_cnn,
     get_architecture_info,
+)
+from .attention import (
+    SpatialAttention,
+    ChannelAttention,
+    CBAM,
+    TreechopSpatialBias,
+    create_attention,
 )
 from .dueling_head import DuelingHead
 from .dqn_network import DQNNetwork
@@ -37,6 +50,12 @@ __all__ = [
     'CNN_ARCHITECTURES',
     'create_cnn',
     'get_architecture_info',
+    # Attention modules
+    'SpatialAttention',
+    'ChannelAttention',
+    'CBAM',
+    'TreechopSpatialBias',
+    'create_attention',
     # Network heads
     'DuelingHead', 
     'DQNNetwork',

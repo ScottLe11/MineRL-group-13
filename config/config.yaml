@@ -35,6 +35,14 @@ network:
   # Options: 'tiny' (~150K), 'small' (~400K), 'medium' (~600K), 'wide' (~1M), 'deep' (~500K)
   architecture: "small"              # Default: small (Atari DQN style)
   
+  # Attention mechanism (optional)
+  # Options: 'none', 'spatial', 'cbam', 'treechop_bias'
+  # - none: No attention (default)
+  # - spatial: Pure spatial attention (where to look)
+  # - cbam: Combined channel + spatial (full CBAM module)
+  # - treechop_bias: Spatial attention biased toward screen center and hotbar
+  attention: "none"
+  
 # =============================================================================
 # DQN AGENT
 # =============================================================================
@@ -93,6 +101,12 @@ training:
   # Paths
   checkpoint_dir: "checkpoints"
   log_dir: "runs"
+  
+  # Video recording at milestones (0%, 20%, 40%, 60%, 80%, 100%)
+  video_recording:
+    enabled: false                   # Record episodes at milestones
+    save_dir: "videos"               # Directory for saved videos
+    fps: 10                          # Video framerate
 
 # =============================================================================
 # PPO (Alternative to DQN)

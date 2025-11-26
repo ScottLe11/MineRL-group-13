@@ -246,7 +246,7 @@ def create_mock_env(env_config: dict, reward_config: dict = None, max_episode_st
     return MockMineRLEnv(env_config, reward_config, max_episode_steps)
 
 
-def train(config: dict, use_mock: bool = False):
+def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
     """
     Main training loop - trains for a fixed number of EPISODES.
     
@@ -295,6 +295,13 @@ def train(config: dict, use_mock: bool = False):
         log_dir=config['training']['log_dir'],
         experiment_name=f"treechop_dqn_{config.get('seed', 'noseed')}"
     )
+    
+    # load in recordings
+    if expert_data_path:
+        print("HERE")
+        load_and_prefill_buffer(agent, expert_data_path)
+    else:
+        print("No expert data path provided; skipping buffer prefill.")
     
     # Training parameters (episode-based)
     num_episodes = config['training']['num_episodes']
@@ -441,6 +448,114 @@ def save_checkpoint(agent: DQNAgent, config: dict, episode: int, final: bool = F
     
     print(f"💾 Saved: {path}")
 
+def load_and_prefill_buffer(agent: DQNAgent, expert_data_path: str):
+    """Load expert data from NPZ and prefill the agent's replay buffer."""
+    if not os.path.exists(expert_data_path):
+        print(f"Warning: Expert data file not found at {expert_data_path}. Skipping prefill.")
+        return
+
+    print(f"Loading expert data from {expert_data_path}...")
+    try:
+        data = np.load(expert_data_path)
+    except Exception as e:
+        print(f"Error loading NPZ file: {e}. Skipping prefill.")
+        return
+
+    # Check for required arrays based on the recommended structure
+    required_keys = ['obs_pov', 'obs_time', 'obs_yaw', 'obs_pitch', 
+                     'next_obs_pov', 'next_obs_time', 'next_obs_yaw', 'next_obs_pitch', 
+                     'actions', 'rewards', 'dones']
+    
+    if not all(k in data for k in required_keys):
+        # We assume for simplicity that next_obs_X are not stored, and we compute them from current obs and array shifts
+        # But if the user followed the pkl_parser.py which only stores "obs" and "actions" we need to be explicit.
+        # Given the context, we'll try to reconstruct the transition (S, A, R, S', D) from the arrays.
+        
+        # If the user only saves single-step data, we need all the required keys.
+        # Let's assume the user has the 'obs_pov' etc. for both current and next state, or we compute the next state by shifting.
+        
+        # We will assume a simpler structure for the demo NPZ file, where 'obs_pov' etc are for state S, and S' is S[t+1]
+        
+        # *** Robust check for shifted data (S, S') ***
+        if 'obs_pov' not in data or 'actions' not in data or 'rewards' not in data or 'dones' not in data:
+            print("Error: Missing core arrays (pov, actions, rewards, dones) in NPZ. Skipping prefill.")
+            return
+
+        N = len(data['actions'])
+        
+        # Use simple array slicing to create (S, S') pairs (S' = S[1:], S = S[:-1])
+        # Note: This is an approximation since done=True breaks the sequence.
+        
+        obs_pov = data['obs_pov'][:-1]
+        obs_time = data['obs_time'][:-1]
+        obs_yaw = data['obs_yaw'][:-1]
+        obs_pitch = data['obs_pitch'][:-1]
+        
+        next_obs_pov = data['obs_pov'][1:]
+        next_obs_time = data['obs_time'][1:]
+        next_obs_yaw = data['obs_yaw'][1:]
+        next_obs_pitch = data['obs_pitch'][1:]
+
+        actions = data['actions'][:-1]
+        rewards = data['rewards'][:-1]
+        dones = data['dones'][:-1]
+        
+        # If the last step of the *current* transition was 'done', the next state is irrelevant.
+        # The shifted 'dones' array works as a termination mask.
+        
+    else:
+        # Full set of arrays is available (recommended way)
+        N = len(data['actions'])
+        obs_pov = data['obs_pov']
+        obs_time = data['obs_time']
+        obs_yaw = data['obs_yaw']
+        obs_pitch = data['obs_pitch']
+        next_obs_pov = data['next_obs_pov']
+        next_obs_time = data['next_obs_time']
+        next_obs_yaw = data['next_obs_yaw']
+        next_obs_pitch = data['next_obs_pitch']
+        actions = data['actions']
+        rewards = data['rewards']
+        dones = data['dones']
+    
+    total_transitions = len(actions)
+    
+    print(f"Found {total_transitions} transitions in expert data.")
+    
+    for i in range(total_transitions):
+        # 1. Construct current state dict (S)
+        state = {
+            'pov': obs_pov[i],
+            'time': obs_time[i],
+            'yaw': obs_yaw[i],
+            'pitch': obs_pitch[i],
+        }
+        
+        # 2. Construct next state dict (S')
+        next_state = {
+            'pov': next_obs_pov[i],
+            'time': next_obs_time[i],
+            'yaw': next_obs_yaw[i],
+            'pitch': next_obs_pitch[i],
+        }
+        
+        # 3. Store in agent's buffer
+        agent.store_experience(
+            state,
+            actions[i],
+            rewards[i],
+            next_state,
+            dones[i]
+        )
+        
+        # Stop once buffer is full enough to start training
+        if agent.replay_buffer.is_ready():
+            break
+
+    print(f"Finished prefilling buffer. Current size: {len(agent.replay_buffer)}")
+    if agent.replay_buffer.is_ready():
+        print("Replay buffer is ready for immediate training.")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train MineRL Tree-Chopping DQN Agent")
@@ -448,6 +563,8 @@ def main():
                         help='Path to config file (default: config/config.yaml)')
     parser.add_argument('--mock', action='store_true',
                         help='Use mock environment instead of real MineRL (for testing)')
+    parser.add_argument('--load-expert-data', type=str, default=None, # <- ADD THIS LINE
+                        help='Path to expert data NPZ file to prefill replay buffer') # <- ADD THIS LINE
     args = parser.parse_args()
     
     # Load config
@@ -464,7 +581,7 @@ def main():
     print("=" * 60)
     
     # Train
-    train(config, use_mock=args.mock)
+    train(config, use_mock=args.mock, expert_data_path = args.load_expert_data)
 
 
 if __name__ == "__main__":

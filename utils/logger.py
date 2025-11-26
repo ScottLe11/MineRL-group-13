@@ -115,6 +115,27 @@ class Logger:
         if q_std is not None:
             self.log_scalar("train/q_std", q_std, step)
     
+    def log_training_step(self, step: int, loss: float, q_mean: float, 
+                          td_error: float = None, per_beta: float = None):
+        """
+        Log detailed training step metrics including PER stats.
+        
+        Args:
+            step: Global step number.
+            loss: Training loss.
+            q_mean: Mean Q-value of the batch.
+            td_error: Mean absolute TD error.
+            per_beta: Current PER importance sampling beta (if using PER).
+        """
+        self.log_scalar("train/loss", loss, step)
+        self.log_scalar("train/q_mean", q_mean, step)
+        
+        if td_error is not None:
+            self.log_scalar("train/td_error", td_error, step)
+        
+        if per_beta is not None:
+            self.log_scalar("train/per_beta", per_beta, step)
+    
     def set_step(self, step: int):
         """Set the global step counter."""
         self.step = step

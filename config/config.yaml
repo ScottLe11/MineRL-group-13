@@ -21,7 +21,7 @@ environment:
   # Curriculum (starting conditions) - see config/CURRICULUM_LEARNING.md
   curriculum:
     spawn_type: "random"             # "random" or "near_tree" (near_tree needs custom handler)
-    with_logs: 8                     # Number of starting logs (0-10)
+    with_logs: 0                    # Number of starting logs (0-10)
     with_axe: true                  # Start with wooden axe equipped
 
 # =============================================================================
@@ -29,13 +29,49 @@ environment:
 # =============================================================================
 network:
   input_channels: 4                  # Frame stack size
-  cnn_features: 512                  # CNN output features
+
+  # CNN Architecture selection
+  # Options: 'tiny' (~150K), 'small' (~400K), 'medium' (~600K), 'wide' (~1M), 'deep' (~500K)
+  # CNN output dimension is architecture-dependent (256 for tiny, 512 for others)
+  architecture: "small"              # Default: small (Atari DQN style, proven baseline)
+
+  # Attention mechanism (optional)
+  # Options: 'none', 'spatial', 'cbam', 'treechop_bias'
+  # - none: No attention (default, recommended for initial training)
+  # - spatial: Pure spatial attention (learns where to look)
+  # - cbam: Combined channel + spatial (full CBAM module, most comprehensive)
+  # - treechop_bias: Spatial attention biased toward screen center and hotbar
+  attention: "spatial"
   
+# =============================================================================
+# ACTION SPACE
+# =============================================================================
+action_space:
+  # Configure which actions to include from the action pool
+  # The action pool consists of 26 actions (indices 0-25):
+  #   0-6:   Movement primitives (noop, forward, back, right, left, jump, attack)
+  #   7-18:  Camera primitives (turn left/right, look up/down at various angles)
+  #   19-22: Basic crafting macros (planks, make_table, sticks, axe)
+  #   23:    craft_entire_axe (full pipeline: planks -> table -> sticks -> axe)
+  #   24:    attack_5 (attack for 5 steps = 20 frames)
+  #   25:    attack_10 (attack for 10 steps = 40 frames)
+
+  # Method for action selection:
+  # - "base": Use base 23 actions (indices 0-22)
+  # - "assisted": Curated set for assisted learning (movement + key camera angles + craft_entire_axe + extended attacks)
+  # - "custom": Use custom list specified in enabled_actions
+  preset: "custom"                   # Default: assisted learning preset
+
+  # Custom action list (only used if preset is "custom")
+  # Example: [0, 1, 2, 6, 7, 8, 23] would include only noop, forward, back,
+  #          attack, turn_left_30, turn_left_45, and craft_entire_axe
+  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 13, 15, 17, 24, 25]
+
 # =============================================================================
 # DQN AGENT
 # =============================================================================
 dqn:
-  num_actions: 23                    # Total discrete actions
+  num_actions: null                  # Auto-computed from action_space config
   
   # Learning
   learning_rate: 0.0001              # Adam learning rate
@@ -59,9 +95,16 @@ dqn:
   
   # Target Network
   target_update:
-    method: "soft"                   # "soft" or "hard"
+    method: "hard"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
-    hard_update_freq: 1000           # Steps between hard updates (if hard)
+    hard_update_freq: 500           # Steps between hard updates (if hard)
+  
+  # Prioritized Experience Replay (optional)
+  prioritized_replay:
+    enabled: false                   # Use PER instead of uniform sampling
+    alpha: 0.6                       # Priority exponent (0=uniform, 1=full prioritization)
+    beta_start: 0.4                  # Initial importance sampling exponent
+    beta_end: 1.0                    # Final importance sampling exponent (anneals with epsilon)
 
 # =============================================================================
 # TRAINING
@@ -71,7 +114,7 @@ training:
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
   num_episodes: 200                  # Total episodes to train
-  train_freq: 4                      # Train every N agent steps
+  train_freq: 10                      # Train every N agent steps
   
   # Logging & Saving (in episodes)
   log_freq: 10                       # Log metrics every N episodes
@@ -82,6 +125,12 @@ training:
   # Paths
   checkpoint_dir: "checkpoints"
   log_dir: "runs"
+  
+  # Video recording at milestones (0%, 20%, 40%, 60%, 80%, 100%)
+  video_recording:
+    enabled: false                   # Record episodes at milestones
+    save_dir: "videos"               # Directory for saved videos
+    fps: 10                          # Video framerate
 
 # =============================================================================
 # PPO (Alternative to DQN)
@@ -104,10 +153,22 @@ ppo:
 algorithm: "dqn"                     # "dqn" or "ppo"
 
 # =============================================================================
-# REWARD
+# REWARD (Wood Inventory-Based)
 # =============================================================================
+# New reward system based on wood inventory changes:
+# - Reward = (wood_delta × wood_value) + step_penalty
+# - Mining wood: +wood_value per log gained
+# - Crafting/placing wood: -wood_value per log used
+# - Total episode reward = final_wood_count × wood_value + step_penalties
+#
+# Example with wood_value=1.0:
+#   - Mine 10 logs: +10.0
+#   - Use 3 logs for crafting: -3.0
+#   - Final inventory: 7 logs
+#   - Total wood reward: +7.0 (same as final inventory!)
+#
 rewards:
-  wood_value: 1.0                    # Points per log mined
+  wood_value: 1.0                    # Points per log change (mined or used)
   step_penalty: -0.001               # Penalty per frame (encourages speed)
 
 # =============================================================================

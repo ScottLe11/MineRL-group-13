@@ -5,19 +5,20 @@ Complete DQN network combining CNN feature extractor and Dueling head.
 import torch
 import torch.nn as nn
 
-from .cnn import SmallCNN
+from .cnn import create_cnn
+from .attention import create_attention
 from .dueling_head import DuelingHead
 
 
 class DQNNetwork(nn.Module):
     """
     Complete DQN network for MineRL tree-chopping task.
-    
+
     Architecture:
-        Visual Input (4, 84, 84) -> SmallCNN -> (512,)
-        Scalar Input (3,) -> concat -> (515,)
-        Combined -> DuelingHead -> Q-values (23,)
-    
+        Visual Input (4, 84, 84) -> CNN -> [Attention] -> (cnn_dim,)
+        Scalar Input (3,) -> concat -> (cnn_dim + 3,)
+        Combined -> DuelingHead -> Q-values (num_actions,)
+
     Observation format expected:
         {
             'pov': (batch, 4, 84, 84) uint8 or float,
@@ -26,37 +27,82 @@ class DQNNetwork(nn.Module):
             'pitch': (batch,) or (batch, 1) float
         }
     """
-    
-    def __init__(self, num_actions: int = 23, input_channels: int = 4, num_scalars: int = 3):
+
+    def __init__(
+        self,
+        num_actions: int = 23,
+        input_channels: int = 4,
+        num_scalars: int = 3,
+        cnn_architecture: str = 'small',
+        attention_type: str = 'none'
+    ):
         """
         Args:
             num_actions: Number of discrete actions (default: 23)
             input_channels: Number of stacked frames (default: 4)
             num_scalars: Number of scalar observations (default: 3 for time, yaw, pitch)
+            cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
+            attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
         """
         super().__init__()
-        
+
         self.num_actions = num_actions
         self.num_scalars = num_scalars
-        
-        # CNN for visual features
-        self.cnn = SmallCNN(input_channels=input_channels)
-        cnn_output_dim = self.cnn.get_output_dim()  # 512
-        
+        self.cnn_architecture = cnn_architecture
+        self.attention_type = attention_type
+
+        # CNN for visual features (configurable architecture)
+        self.cnn = create_cnn(cnn_architecture, input_channels=input_channels)
+        cnn_output_dim = self.cnn.get_output_dim()  # Architecture-dependent (256 or 512)
+
+        # Optional attention mechanism
+        # Note: Attention is applied to conv features, not final FC output
+        # We'll apply it in forward() if needed
+        self.use_attention = (attention_type != 'none')
+        if self.use_attention:
+            # For spatial/treechop_bias, we need the conv output shape (channels, H, W)
+            # This requires accessing cnn internals
+            if hasattr(self.cnn, 'conv'):
+                # Get number of channels from last conv layer
+                last_conv = None
+                for module in reversed(list(self.cnn.conv.modules())):
+                    if isinstance(module, nn.Conv2d):
+                        last_conv = module
+                        break
+                if last_conv is not None:
+                    conv_channels = last_conv.out_channels
+                    if attention_type in ['cbam', 'channel']:
+                        self.attention = create_attention(attention_type, channels=conv_channels)
+                    elif attention_type in ['spatial', 'treechop_bias']:
+                        self.attention = create_attention(attention_type, height=7, width=7)
+                    else:
+                        self.attention = nn.Identity()
+                        self.use_attention = False
+                else:
+                    print(f"Warning: Could not find conv layer for attention, disabling attention")
+                    self.attention = nn.Identity()
+                    self.use_attention = False
+            else:
+                print(f"Warning: CNN architecture {cnn_architecture} doesn't support attention, disabling")
+                self.attention = nn.Identity()
+                self.use_attention = False
+        else:
+            self.attention = nn.Identity()
+
         # Combined feature dimension
-        combined_dim = cnn_output_dim + num_scalars  # 515
-        
+        combined_dim = cnn_output_dim + num_scalars
+
         # Dueling head
         self.head = DuelingHead(input_dim=combined_dim, num_actions=num_actions)
     
     def forward(self, obs: dict) -> torch.Tensor:
         """
         Forward pass through the network.
-        
+
         Args:
             obs: Dictionary with keys 'pov', 'time', 'yaw', 'pitch'
                  OR a tensor for pov only (for simple testing)
-        
+
         Returns:
             q_values: (batch, num_actions) tensor
         """
@@ -70,12 +116,12 @@ class DQNNetwork(nn.Module):
             pov = obs['pov']
             batch_size = pov.size(0)
             device = pov.device
-            
+
             # Handle scalar dimensions
             time = obs.get('time', torch.zeros(batch_size, device=device))
             yaw = obs.get('yaw', torch.zeros(batch_size, device=device))
             pitch = obs.get('pitch', torch.zeros(batch_size, device=device))
-            
+
             # Ensure scalars are (batch, 1)
             if time.dim() == 1:
                 time = time.unsqueeze(1)
@@ -83,18 +129,35 @@ class DQNNetwork(nn.Module):
                 yaw = yaw.unsqueeze(1)
             if pitch.dim() == 1:
                 pitch = pitch.unsqueeze(1)
-            
+
             scalars = torch.cat([time, yaw, pitch], dim=1)  # (batch, 3)
-        
+
         # Extract visual features
-        visual_features = self.cnn(pov)  # (batch, 512)
-        
+        # If using attention, apply it to conv features before FC layer
+        if self.use_attention and hasattr(self.cnn, 'conv') and hasattr(self.cnn, 'fc'):
+            # Normalize input
+            if pov.max() > 1.0:
+                pov = pov.float() / 255.0
+
+            # Conv features
+            conv_features = self.cnn.conv(pov)  # (batch, channels, H, W)
+
+            # Apply attention
+            attended_features, _ = self.attention(conv_features)  # (batch, channels, H, W)
+
+            # Flatten and pass through FC
+            attended_features = attended_features.view(attended_features.size(0), -1)
+            visual_features = self.cnn.fc(attended_features)  # (batch, cnn_output_dim)
+        else:
+            # Standard forward pass (no attention)
+            visual_features = self.cnn(pov)  # (batch, cnn_output_dim)
+
         # Concatenate with scalars
-        combined = torch.cat([visual_features, scalars], dim=1)  # (batch, 515)
-        
+        combined = torch.cat([visual_features, scalars], dim=1)  # (batch, cnn_dim + 3)
+
         # Compute Q-values
         q_values = self.head(combined)  # (batch, num_actions)
-        
+
         return q_values
     
     def get_action(self, obs: dict, epsilon: float = 0.0) -> int:

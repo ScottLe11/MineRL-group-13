@@ -5,6 +5,13 @@ Training script for the MineRL Tree-Chopping DQN Agent.
 Usage:
     python scripts/train.py                    # Use default config
     python scripts/train.py --config path.yaml # Use custom config
+    python scripts/train.py --render           # Show Minecraft window during training
+    
+Features:
+    - Supports multiple CNN architectures (tiny, small, medium, wide, deep)
+    - Prioritized Experience Replay (PER) support
+    - Soft or hard target network updates
+    - Curriculum learning with configurable starting conditions
 """
 
 import argparse
@@ -24,14 +31,15 @@ from gym.envs.registration import register
 from utils.config import load_config
 from utils.logger import Logger
 from agent.dqn import DQNAgent
+from networks.cnn import create_cnn, get_architecture_info
 from wrappers.vision import StackAndProcessWrapper
 from wrappers.observation import ObservationWrapper
 from wrappers.hold_attack import HoldAttackWrapper
-from wrappers.actions import ExtendedActionWrapper
+from wrappers.actions import ExtendedActionWrapper, ConfigurableActionWrapper
 from wrappers.reward import RewardWrapper
 
-# Import the custom treechop spec from main.py
-from treechop_spec import Treechop, handlers
+# Import the custom treechop spec
+from treechop_spec import Treechop, ConfigurableTreechop, handlers
 
 
 def set_seed(seed: int):
@@ -99,6 +107,38 @@ def _make_base_treechop_env():
 # Register the custom environment (only once)
 _ENV_REGISTERED = False
 
+
+def _parse_action_space_config(action_config: dict) -> list:
+    """
+    Parse action space configuration and return list of enabled action indices.
+
+    Args:
+        action_config: Action space configuration dict from config.yaml
+
+    Returns:
+        List of action indices to enable (0-25)
+    """
+    preset = action_config.get('preset', 'base')
+
+    if preset == 'base':
+        # Base 23 actions (0-22)
+        return list(range(23))
+    elif preset == 'assisted':
+        # Assisted learning preset: curated action set
+        # Movement (0-6) + key camera angles + craft_entire_axe + extended attacks
+        return [0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 13, 15, 17, 23, 24, 25]
+    elif preset == 'custom':
+        # Use custom enabled_actions list
+        enabled = action_config.get('enabled_actions', [])
+        if not enabled:
+            print("Warning: preset='custom' but enabled_actions is empty. Defaulting to base 23 actions.")
+            return list(range(23))
+        return enabled
+    else:
+        print(f"Warning: Unknown action preset '{preset}'. Defaulting to base 23 actions.")
+        return list(range(23))
+
+
 def _ensure_env_registered():
     """Register custom env if not already registered."""
     global _ENV_REGISTERED
@@ -115,7 +155,7 @@ def _ensure_env_registered():
             pass
 
 
-def create_env(config: dict, use_mock: bool = False):
+def create_env(config: dict):
     """
     Create and wrap the MineRL environment.
 
@@ -125,16 +165,16 @@ def create_env(config: dict, use_mock: bool = False):
     3. HoldAttackWrapper (attack duration)
     4. RewardWrapper (reward shaping)
     5. ObservationWrapper (add scalars)
-    6. ExtendedActionWrapper (discrete actions)
+    6. ConfigurableActionWrapper (discrete actions with configurable action space)
 
     Args:
         config: Configuration dictionary
-        use_mock: If True, force use of mock environment for testing
     """
     global _CURRICULUM_CONFIG
 
     env_config = config['environment']
     reward_config = config.get('rewards', {})
+    action_config = config.get('action_space', {})
 
     # Set curriculum config BEFORE creating env (used by CustomTreechop)
     curriculum = env_config.get('curriculum', {})
@@ -148,19 +188,14 @@ def create_env(config: dict, use_mock: bool = False):
     episode_seconds = env_config.get('episode_seconds', 20)
     max_steps_per_episode = episode_seconds * 5
 
-    if use_mock:
-        print("Using mock environment (use_mock=True)")
-        return create_mock_env(env_config, reward_config, max_steps_per_episode)
+    # Parse action space configuration
+    enabled_actions = _parse_action_space_config(action_config)
+    print(f"Action space: {len(enabled_actions)} actions (preset: {action_config.get('preset', 'base')})")
 
-    # Try to create real MineRL environment
-    try:
-        _ensure_env_registered()
-        env = gym.make(env_config['name'])
-        print(f"Created MineRL environment: {env_config['name']}")
-    except Exception as e:
-        print(f"Warning: Could not create MineRL env '{env_config['name']}': {e}")
-        print("Falling back to mock environment...")
-        return create_mock_env(env_config, reward_config, max_steps_per_episode)
+    # Create real MineRL environment
+    _ensure_env_registered()
+    env = gym.make(env_config['name'])
+    print(f"✓ Created MineRL environment: {env_config['name']}")
 
     # Apply wrappers in order (same as main.py but with additional wrappers)
     env = StackAndProcessWrapper(env, shape=tuple(env_config['frame_shape']))
@@ -178,7 +213,7 @@ def create_env(config: dict, use_mock: bool = False):
         step_penalty=reward_config.get('step_penalty', -0.001)
     )
     env = ObservationWrapper(env, max_episode_steps=max_steps_per_episode)
-    env = ExtendedActionWrapper(env)
+    env = ConfigurableActionWrapper(env, enabled_actions=enabled_actions)
 
     return env
 
@@ -249,18 +284,18 @@ def create_mock_env(env_config: dict, reward_config: dict = None, max_episode_st
 def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
     """
     Main training loop - trains for a fixed number of EPISODES.
-    
+
     Args:
         config: Configuration dictionary.
-        use_mock: If True, use mock environment instead of real MineRL.
+        render: If True, render the Minecraft window during training.
     """
     # Setup
     set_seed(config.get('seed'))
     device = config['device']
     print(f"Training on device: {device}")
-    
+
     # Create environment
-    env = create_env(config, use_mock=use_mock)
+    env = create_env(config)
     print(f"Environment created: {config['environment']['name']}")
     print(f"Action space: {env.action_space}")
     
@@ -272,21 +307,51 @@ def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
     # Update config with actual action space size
     config['dqn']['num_actions'] = env.action_space.n
     
-    # Create agent
+    # Create agent with full configuration
     dqn_config = config['dqn']
+    network_config = config['network']
+    target_config = dqn_config.get('target_update', {})
+    per_config = dqn_config.get('prioritized_replay', {})
+    
+    # Log network architecture choice
+    arch_name = network_config.get('architecture', 'small')
+    attention_type = network_config.get('attention', 'none')
+    arch_info = get_architecture_info().get(arch_name, {})
+    print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
+    print(f"Attention mechanism: {attention_type}")
+
+    # Log PER and target update settings
+    use_per = per_config.get('enabled', False)
+    target_method = target_config.get('method', 'soft')
+    print(f"Prioritized replay: {'enabled' if use_per else 'disabled'}")
+    print(f"Target updates: {target_method}")
+
     agent = DQNAgent(
         num_actions=dqn_config['num_actions'],
-        input_channels=config['network']['input_channels'],
+        input_channels=network_config['input_channels'],
         num_scalars=3,  # time, yaw, pitch
         learning_rate=dqn_config['learning_rate'],
         gamma=dqn_config['gamma'],
-        tau=dqn_config['target_update']['tau'],
+        # Target update settings
+        tau=target_config.get('tau', 0.005),
+        target_update_method=target_method,
+        hard_update_freq=target_config.get('hard_update_freq', 1000),
+        # Exploration settings
         epsilon_start=dqn_config['exploration']['epsilon_start'],
         epsilon_end=dqn_config['exploration']['epsilon_end'],
         epsilon_decay_steps=dqn_config['exploration']['epsilon_decay_steps'],
+        # Replay buffer settings
         buffer_capacity=dqn_config['replay_buffer']['capacity'],
         buffer_min_size=dqn_config['replay_buffer']['min_size'],
         batch_size=dqn_config['batch_size'],
+        # Prioritized Experience Replay
+        use_per=use_per,
+        per_alpha=per_config.get('alpha', 0.6),
+        per_beta_start=per_config.get('beta_start', 0.4),
+        per_beta_end=per_config.get('beta_end', 1.0),
+        # Network architecture
+        cnn_architecture=arch_name,
+        attention_type=attention_type,
         device=config['device']
     )
     
@@ -314,7 +379,11 @@ def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
     print(f"{'='*60}")
     print(f"Episodes: {num_episodes}")
     print(f"Episode length: {episode_seconds} seconds ({max_steps_per_episode} agent steps)")
-    print(f"Replay buffer min: {dqn_config['replay_buffer']['min_size']}")
+    print(f"Network: {arch_name} ({arch_info.get('params', '?'):,} params)")
+    print(f"Replay buffer: {dqn_config['replay_buffer']['capacity']:,} capacity, {dqn_config['replay_buffer']['min_size']:,} min")
+    print(f"PER: {'enabled (α={}, β={}->{})'.format(per_config.get('alpha', 0.6), per_config.get('beta_start', 0.4), per_config.get('beta_end', 1.0)) if use_per else 'disabled'}")
+    print(f"Target update: {target_method}" + (f" (τ={target_config.get('tau', 0.005)})" if target_method == 'soft' else f" (every {target_config.get('hard_update_freq', 1000)} steps)"))
+    print(f"Curriculum: with_logs={_CURRICULUM_CONFIG['with_logs']}, with_axe={_CURRICULUM_CONFIG['with_axe']}")
     print(f"{'='*60}\n")
     
     # Training state
@@ -339,6 +408,10 @@ def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
             # Take step (this executes 4 MineRL frames = 200ms)
             next_obs, reward, done, info = env.step(action)
 
+            # Render if requested
+            if render:
+                env.render()
+
             # Store experience
             state = {
                 'pov': obs['pov'],
@@ -356,7 +429,17 @@ def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
 
             # Train every train_freq steps
             if global_step % train_freq == 0 and agent.replay_buffer.is_ready():
-                agent.train_step()
+                train_metrics = agent.train_step()
+                
+                # Log training metrics periodically
+                if train_metrics and global_step % (train_freq * 100) == 0:
+                    logger.log_training_step(
+                        step=global_step,
+                        loss=train_metrics.get('loss', 0),
+                        q_mean=train_metrics.get('q_mean', 0),
+                        td_error=train_metrics.get('td_error_mean', 0),
+                        per_beta=train_metrics.get('per_beta', None)
+                    )
 
             # Update counters
             # Macros take multiple frames - count them properly (frames / 4 = agent steps)
@@ -400,6 +483,31 @@ def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
                   f"Success: {success_rate:.0f}% | "
                   f"ε: {agent.get_epsilon():.3f} | "
                   f"Buffer: {len(agent.replay_buffer)}")
+
+            # Print action statistics to diagnose exploration issues
+            if hasattr(agent, 'get_action_stats'):
+                stats = agent.get_action_stats()
+                if stats:
+                    print(f"  [Action Stats] Last 100: {stats['last_100_unique']}/{len(stats['last_100_actions'])} unique")
+
+                    # Print top 3 most frequent actions WITH NAMES
+                    top_actions = sorted(enumerate(stats['action_frequencies']), key=lambda x: x[1], reverse=True)[:3]
+
+                    # Get action names from environment (handles ConfigurableActionWrapper mapping)
+                    action_names = []
+                    if hasattr(env, 'action_names'):
+                        # ConfigurableActionWrapper has action_names
+                        action_names = env.action_names
+                    else:
+                        # Fallback to default action names
+                        from wrappers.actions import ACTION_NAMES_POOL
+                        action_names = ACTION_NAMES_POOL[:agent.num_actions]
+
+                    top_str = ", ".join([
+                        f"{action_names[idx] if idx < len(action_names) else f'a{idx}'}:{freq*100:.1f}%"
+                        for idx, freq in top_actions
+                    ])
+                    print(f"  [Top Actions] {top_str}")
         
         # Save checkpoint every save_freq episodes
         if episode % save_freq == 0:
@@ -563,13 +671,15 @@ def main():
                         help='Path to config file (default: config/config.yaml)')
     parser.add_argument('--mock', action='store_true',
                         help='Use mock environment instead of real MineRL (for testing)')
-    parser.add_argument('--load-expert-data', type=str, default=None, # <- ADD THIS LINE
-                        help='Path to expert data NPZ file to prefill replay buffer') # <- ADD THIS LINE
+    parser.add_argument('--load-expert-data', type=str, default=None,
+                        help='Path to expert data NPZ file to prefill replay buffer') 
+    parser.add_argument('--render', action='store_true',
+                        help='Render the Minecraft window during training')
     args = parser.parse_args()
-    
+
     # Load config
     config = load_config(args.config)
-    
+
     print("=" * 60)
     print("MineRL Tree-Chopping DQN Training")
     print("=" * 60)
@@ -577,11 +687,11 @@ def main():
     print(f"Device: {config['device']}")
     print(f"Episodes: {config['training']['num_episodes']}")
     print(f"Episode length: {config['environment']['episode_seconds']}s")
-    print(f"Environment: {'MOCK' if args.mock else 'MineRL'}")
+    print(f"Render: {args.render}")
     print("=" * 60)
-    
+
     # Train
-    train(config, use_mock=args.mock, expert_data_path = args.load_expert_data)
+    train(config, render=args.render)
 
 
 if __name__ == "__main__":

@@ -208,6 +208,30 @@ def train(config: dict, render: bool = False):
                   f"ε: {agent.get_epsilon():.3f} | "
                   f"Buffer: {len(agent.replay_buffer)}")
 
+            # Print Q-values for top actions
+            if hasattr(agent, 'get_q_values'):
+                try:
+                    q_values = agent.get_q_values(obs)
+
+                    # Get action names from environment
+                    action_names = []
+                    if hasattr(env, 'action_names'):
+                        action_names = env.action_names
+                    else:
+                        from wrappers.actions import ACTION_NAMES_POOL
+                        action_names = ACTION_NAMES_POOL[:agent.num_actions]
+
+                    # Get top 5 actions by Q-value
+                    top_indices = np.argsort(q_values)[-5:][::-1]  # Descending order
+                    top_q_str = ", ".join([
+                        f"{action_names[idx] if idx < len(action_names) else f'a{idx}'}:{q_values[idx]:.2f}"
+                        for idx in top_indices
+                    ])
+                    print(f"  [Top Q-values] {top_q_str}")
+                except Exception as e:
+                    # Silently skip Q-value logging if there's an error
+                    pass
+
             # Print action statistics to diagnose exploration issues
             if hasattr(agent, 'get_action_stats'):
                 stats = agent.get_action_stats()

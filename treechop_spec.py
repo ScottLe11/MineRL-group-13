@@ -112,19 +112,22 @@ class Treechop(HumanControlEnvSpec):
 class ConfigurableTreechop(Treechop):
     """
     Treechop environment with configurable starting conditions for curriculum learning.
-    
+
     Supports 3 independent switches that can be combined:
     - spawn_type: "random" or "near_tree" (near_tree not yet implemented)
     - with_logs: Number of starting logs (0-10)
     - with_axe: Whether to start with wooden axe
-    
+
+    Rewards ALL wood types (not just oak):
+    - oak_log, birch_log, spruce_log, jungle_log, acacia_log, dark_oak_log
+
     Examples:
         # Easy - just needs to chop
         env = ConfigurableTreechop(with_axe=True).make()
-        
+
         # Medium - has materials for axe
         env = ConfigurableTreechop(with_logs=6).make()
-        
+
         # Hard - full task from scratch
         env = ConfigurableTreechop(with_logs=0, with_axe=False).make()
     """
@@ -167,35 +170,49 @@ class ConfigurableTreechop(Treechop):
         
         super().__init__(*args, **kwargs)
     
+    def create_rewardables(self) -> List[Handler]:
+        """Reward ALL types of wood logs, not just oak."""
+        return [
+            handlers.RewardForCollectingItems([
+                # All wood log types give +1 reward
+                dict(type="oak_log", amount=1, reward=1.0),
+                dict(type="birch_log", amount=1, reward=1.0),
+                dict(type="spruce_log", amount=1, reward=1.0),
+                dict(type="jungle_log", amount=1, reward=1.0),
+                dict(type="acacia_log", amount=1, reward=1.0),
+                dict(type="dark_oak_log", amount=1, reward=1.0),
+            ])
+        ]
+
     def create_agent_start(self) -> List[Handler]:
         """Create agent start handlers with configured inventory."""
         # Get base handlers (excludes parent's inventory setup)
         base_handlers = Treechop.create_agent_start.__wrapped__(self) if hasattr(Treechop.create_agent_start, '__wrapped__') else []
-        
+
         # Actually just use the grandparent's create_agent_start to avoid duplicate items
         from minerl.herobraine.env_specs.human_controls import HumanControlEnvSpec
         base_handlers = HumanControlEnvSpec.create_agent_start(self)
-        
+
         # Build custom inventory
         inventory = []
-        
+
         if self.with_logs > 0:
             inventory.append(dict(type="oak_log", quantity=self.with_logs))
-        
+
         if self.with_axe:
             inventory.append(dict(type="wooden_axe", quantity=1))
-        
+
         if inventory:
             base_handlers.append(
                 handlers.SimpleInventoryAgentStart(inventory)
             )
-        
+
         # Handle spawn type (near_tree would need custom handler)
         if self.spawn_type == "near_tree":
             # TODO: Implement custom near-tree spawn handler
             # For now, forest biome (fixedBiome=11) provides naturally dense trees
             print("Warning: near_tree spawn not yet implemented, using random spawn")
-        
+
         return base_handlers
     
     @classmethod

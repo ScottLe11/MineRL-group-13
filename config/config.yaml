@@ -169,7 +169,7 @@ algorithm: "dqn"                     # "dqn" or "ppo"
 #
 rewards:
   wood_value: 1.0                    # Points per log change (mined or used)
-  step_penalty: -0.001               # Penalty per frame (encourages speed)
+  step_penalty: 0               # Penalty per frame (encourages speed)
 
 # =============================================================================
 # HARDWARE

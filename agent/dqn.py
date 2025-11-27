@@ -52,9 +52,8 @@ class DQNAgent:
     """
     Deep Q-Network agent with:
     - Double DQN (use online network to select actions, target to evaluate)
-    - Soft or hard target updates (configurable)
+    - Soft target updates (Polyak averaging)
     - Epsilon-greedy exploration with linear decay
-    - Optional Prioritized Experience Replay
     """
     
     def __init__(
@@ -73,6 +72,7 @@ class DQNAgent:
         buffer_capacity: int = 100000,
         buffer_min_size: int = 1000,
         batch_size: int = 32,
+        max_grad_norm: float = 10.0,
         use_per: bool = False,
         per_alpha: float = 0.6,
         per_beta_start: float = 0.4,
@@ -97,11 +97,12 @@ class DQNAgent:
             buffer_capacity: Replay buffer capacity
             buffer_min_size: Min experiences before training
             batch_size: Batch size for training
+            max_grad_norm: Maximum gradient norm for clipping
             use_per: Whether to use Prioritized Experience Replay
-            per_alpha: PER priority exponent (0=uniform, 1=full prioritization)
-            per_beta_start: PER initial importance sampling exponent
-            per_beta_end: PER final importance sampling exponent
-            cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
+            per_alpha: Priority exponent for PER
+            per_beta_start: Initial importance sampling exponent
+            per_beta_end: Final importance sampling exponent
+            cnn_architecture: CNN architecture name ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
             device: 'cuda', 'mps', 'cpu', or None for auto-detect
         """
@@ -116,62 +117,67 @@ class DQNAgent:
         self.device = torch.device(device)
         print(f"DQNAgent using device: {self.device}")
 
-        # Networks
+        # Networks (with configurable architecture)
         self.q_network = DQNNetwork(
-            num_actions=num_actions,
-            input_channels=input_channels,
-            num_scalars=num_scalars,
+            num_actions,
+            input_channels,
+            num_scalars,
             cnn_architecture=cnn_architecture,
             attention_type=attention_type
         ).to(self.device)
         self.target_network = DQNNetwork(
-            num_actions=num_actions,
-            input_channels=input_channels,
-            num_scalars=num_scalars,
+            num_actions,
+            input_channels,
+            num_scalars,
             cnn_architecture=cnn_architecture,
             attention_type=attention_type
         ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.target_network.eval()  # Target network is not trained
-        
+
         # Optimizer
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
-        
+
         # Replay buffer (PER or uniform)
         self.use_per = use_per
         if use_per:
             self.replay_buffer = PrioritizedReplayBuffer(
-                capacity=buffer_capacity, 
+                capacity=buffer_capacity,
                 min_size=buffer_min_size,
                 alpha=per_alpha,
                 beta_start=per_beta_start,
                 beta_end=per_beta_end,
-                beta_anneal_steps=epsilon_decay_steps  # Anneal with epsilon
+                beta_decay_steps=epsilon_decay_steps  # Anneal beta with epsilon
             )
             print("Using Prioritized Experience Replay")
         else:
             self.replay_buffer = ReplayBuffer(capacity=buffer_capacity, min_size=buffer_min_size)
             print("Using uniform replay buffer")
-        
+
         # Hyperparameters
         self.num_actions = num_actions
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
-        
+        self.max_grad_norm = max_grad_norm
+
         # Target update settings
         self.target_update_method = target_update_method.lower()
         self.hard_update_freq = hard_update_freq
         if self.target_update_method not in ("soft", "hard"):
             raise ValueError(f"target_update_method must be 'soft' or 'hard', got '{target_update_method}'")
-        print(f"Target updates: {self.target_update_method}" + 
+        print(f"Target updates: {self.target_update_method}" +
               (f" (tau={tau})" if self.target_update_method == "soft" else f" (every {hard_update_freq} steps)"))
-        
+
         # Exploration
         self.epsilon_start = epsilon_start
         self.epsilon_end = epsilon_end
         self.epsilon_decay_steps = epsilon_decay_steps
-        
+
+        # PER settings (for beta annealing)
+        self.per_beta_start = per_beta_start
+        self.per_beta_end = per_beta_end
+
         # Counters
         self.step_count = 0
         self.train_count = 0
@@ -185,71 +191,27 @@ class DQNAgent:
         progress = min(1.0, self.step_count / self.epsilon_decay_steps)
         return self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
     
-    def select_action(self, state: Dict, explore: bool = True, debug: bool = False) -> int:
+    def select_action(self, state: Dict, explore: bool = True) -> int:
         """
         Select action using epsilon-greedy policy.
-
+        
         Args:
             state: Observation dict with 'pov', 'time', 'yaw', 'pitch'
             explore: Whether to use exploration (False for evaluation)
-            debug: If True, print debugging info
-
+        
         Returns:
-            action: Selected action index
+            action: Selected action index (0-22)
         """
         epsilon = self.get_epsilon() if explore else 0.0
-
-        # Epsilon-greedy exploration
+        
         if random.random() < epsilon:
-            action = random.randint(0, self.num_actions - 1)
-            if debug and self.step_count % 100 == 0:
-                print(f"[DEBUG] Exploration: action={action}, epsilon={epsilon:.3f}, step={self.step_count}")
-        else:
-            # Greedy action selection
-            with torch.no_grad():
-                state_tensor = self._state_to_tensor(state)
-                q_values = self.q_network(state_tensor)
-                action = q_values.argmax(dim=1).item()
-                if debug and self.step_count % 100 == 0:
-                    print(f"[DEBUG] Greedy: action={action}, max_q={q_values.max().item():.3f}, epsilon={epsilon:.3f}, step={self.step_count}")
-
-        # Track action frequency
-        self.action_counts[action] += 1
-        self.last_actions.append(action)
-        if len(self.last_actions) > 100:  # Keep last 100
-            self.last_actions.pop(0)
-
-        return action
-
-    def get_action_stats(self) -> Dict:
-        """Get statistics about action selection."""
-        total = sum(self.action_counts)
-        if total == 0:
-            return {}
-
-        return {
-            'total_actions': total,
-            'action_counts': self.action_counts.copy(),
-            'action_frequencies': [count / total for count in self.action_counts],
-            'last_100_unique': len(set(self.last_actions)) if self.last_actions else 0,
-            'last_100_actions': self.last_actions.copy()
-        }
-
-    def get_q_values(self, state: Dict) -> np.ndarray:
-        """
-        Get Q-values for all actions for a given state.
-
-        Args:
-            state: Observation dict with 'pov', 'time', 'yaw', 'pitch'
-
-        Returns:
-            Array of Q-values for each action (shape: [num_actions])
-        """
+            return random.randint(0, self.num_actions - 1)
+        
         with torch.no_grad():
             state_tensor = self._state_to_tensor(state)
             q_values = self.q_network(state_tensor)
-            return q_values.cpu().numpy()[0]  # [0] to remove batch dimension
-
+            return q_values.argmax(dim=1).item()
+    
     def store_experience(self, state: Dict, action: int, reward: float, 
                         next_state: Dict, done: bool):
         """Store experience in replay buffer."""
@@ -259,13 +221,13 @@ class DQNAgent:
     def train_step(self) -> Optional[Dict]:
         """
         Perform one training step if buffer is ready.
-        
+
         Returns:
             dict with training metrics, or None if buffer not ready
         """
         if not self.replay_buffer.is_ready():
             return None
-        
+
         # Sample batch (PER returns weights and indices)
         if self.use_per:
             states, actions, rewards, next_states, dones, weights, indices = self.replay_buffer.sample(self.batch_size)
@@ -274,91 +236,87 @@ class DQNAgent:
             states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
             weights = torch.ones(self.batch_size, device=self.device)
             indices = None
-        
+
         # Convert to tensors
         state_batch = self._batch_states_to_tensor(states)
         action_batch = torch.tensor(actions, dtype=torch.long, device=self.device)
         reward_batch = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         next_state_batch = self._batch_states_to_tensor(next_states)
         done_batch = torch.tensor(dones, dtype=torch.float32, device=self.device)
-        
+
         # Current Q-values
         q_values = self.q_network(state_batch)
         q_values = q_values.gather(1, action_batch.unsqueeze(1)).squeeze(1)
-        
+
         # Double DQN: use online network to select best action, target to evaluate
         with torch.no_grad():
             next_q_online = self.q_network(next_state_batch)
             best_actions = next_q_online.argmax(dim=1)
-            
+
             next_q_target = self.target_network(next_state_batch)
             next_q_values = next_q_target.gather(1, best_actions.unsqueeze(1)).squeeze(1)
-            
+
             # Target Q-values
             target_q_values = reward_batch + self.gamma * next_q_values * (1 - done_batch)
-        
+
         # TD errors (for PER priority updates)
-        td_errors = (q_values - target_q_values).detach()
-        
-        # Weighted loss for PER (importance sampling correction)
-        element_wise_loss = nn.SmoothL1Loss(reduction='none')(q_values, target_q_values)
-        loss = (element_wise_loss * weights).mean()
-        
+        td_errors = torch.abs(q_values - target_q_values)
+
+        # Weighted loss (PER uses importance sampling weights)
+        elementwise_loss = nn.SmoothL1Loss(reduction='none')(q_values, target_q_values)
+        loss = (elementwise_loss * weights).mean()
+
         # Optimize
         self.optimizer.zero_grad()
         loss.backward()
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=10.0)
+        # Gradient clipping (use configured value)
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=self.max_grad_norm)
         self.optimizer.step()
-        
+
         # Update priorities in PER buffer
         if self.use_per and indices is not None:
-            self.replay_buffer.update_priorities(indices, td_errors.abs().cpu().numpy())
-        
-        # Update target network
+            priorities = td_errors.detach().cpu().numpy() + 1e-6  # Small epsilon to avoid zero priority
+            self.replay_buffer.update_priorities(indices, priorities)
+
+        # Update target network (soft or hard)
         if self.target_update_method == "soft":
             self._soft_update()
-        else:  # hard update
-            if self.train_count % self.hard_update_freq == 0:
-                self._hard_update()
-        
+        elif self.target_update_method == "hard" and self.train_count % self.hard_update_freq == 0:
+            self._hard_update()
+
         self.train_count += 1
-        
+
+        # Build metrics dict
         metrics = {
             'loss': loss.item(),
             'q_mean': q_values.mean().item(),
-            'q_max': q_values.max().item(),
-            'epsilon': self.get_epsilon(),
-            'td_error_mean': td_errors.abs().mean().item()
+            'td_error_mean': td_errors.mean().item(),
+            'epsilon': self.get_epsilon()
         }
-        
+
+        # Add PER beta if using PER
         if self.use_per:
-            metrics['per_beta'] = self.replay_buffer._get_beta()
-        
+            metrics['per_beta'] = self.replay_buffer.beta
+
         return metrics
     
     def _soft_update(self):
         """Soft update target network weights: θ_target = τ*θ_local + (1-τ)*θ_target"""
-        for target_param, local_param in zip(self.target_network.parameters(), 
+        for target_param, local_param in zip(self.target_network.parameters(),
                                               self.q_network.parameters()):
             target_param.data.copy_(self.tau * local_param.data + (1.0 - self.tau) * target_param.data)
-    
+
     def _hard_update(self):
-        """Hard update: copy all weights from online to target network."""
+        """Hard update target network: copy weights from Q-network to target network"""
         self.target_network.load_state_dict(self.q_network.state_dict())
     
     def _state_to_tensor(self, state: Dict) -> Dict:
         """Convert single state dict to batched tensor dict."""
-        # Extract scalars (handle both numpy arrays and python floats)
-        time_val = float(np.asarray(state.get('time', 0.0)).item())
-        yaw_val = float(np.asarray(state.get('yaw', 0.0)).item())
-        pitch_val = float(np.asarray(state.get('pitch', 0.0)).item())
-
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time': torch.tensor([time_val], dtype=torch.float32, device=self.device),
-            'yaw': torch.tensor([yaw_val], dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor([pitch_val], dtype=torch.float32, device=self.device)
+            'time': torch.tensor([state.get('time', 0.0)], dtype=torch.float32, device=self.device),
+            'yaw': torch.tensor([state.get('yaw', 0.0)], dtype=torch.float32, device=self.device),
+            'pitch': torch.tensor([state.get('pitch', 0.0)], dtype=torch.float32, device=self.device)
         }
     
     def _batch_states_to_tensor(self, states: list) -> Dict:

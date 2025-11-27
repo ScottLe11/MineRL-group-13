@@ -19,6 +19,8 @@ import os
 import sys
 import random
 import numpy as np
+import time
+import socket
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,6 +44,39 @@ def set_seed(seed: int):
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
+
+
+def safe_env_reset(env, max_retries: int = 3, retry_delay: float = 2.0):
+    """
+    Safely reset environment with retry logic for MineRL socket timeouts.
+
+    Args:
+        env: The environment to reset
+        max_retries: Maximum number of retry attempts
+        retry_delay: Seconds to wait between retries (doubles each retry)
+
+    Returns:
+        Initial observation from env.reset()
+
+    Raises:
+        Exception: If all retries fail
+    """
+    for attempt in range(max_retries):
+        try:
+            obs = env.reset()
+            return obs
+        except (socket.timeout, TimeoutError, OSError) as e:
+            if attempt < max_retries - 1:
+                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                print(f"⚠️  Environment reset failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}")
+                print(f"   Retrying in {wait_time:.1f}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ Environment reset failed after {max_retries} attempts")
+                raise
+
+    # Should never reach here, but just in case
+    raise RuntimeError("Unexpected error in safe_env_reset")
 
 
 def train(config: dict, render: bool = False):
@@ -114,12 +149,23 @@ def train(config: dict, render: bool = False):
     global_step = 0
     best_avg_wood = 0
     recent_wood = []  # Track last 50 episodes
-    
+
+    # Environment recreation interval (helps prevent MineRL memory leaks)
+    env_recreation_interval = 50  # Recreate environment every N episodes
+
     # =========================================================================
     # MAIN TRAINING LOOP (episode-based)
     # =========================================================================
     for episode in range(1, num_episodes + 1):
-        obs = env.reset()
+        # Periodically recreate environment to prevent memory leaks
+        if episode > 1 and episode % env_recreation_interval == 0:
+            print(f"\n🔄 Recreating environment at episode {episode} (prevent memory leaks)...")
+            env.close()
+            env = create_env(config)
+            print("✓ Environment recreated\n")
+
+        # Safe reset with retry logic for MineRL socket timeouts
+        obs = safe_env_reset(env, max_retries=3, retry_delay=2.0)
         episode_reward = 0
         episode_wood = 0
         step_in_episode = 0

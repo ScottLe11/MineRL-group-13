@@ -59,6 +59,8 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
         buffer_capacity=dqn_config['replay_buffer']['capacity'],
         buffer_min_size=dqn_config['replay_buffer']['min_size'],
         batch_size=dqn_config['batch_size'],
+        # Training settings
+        max_grad_norm=dqn_config.get('gradient_clip', 10.0),
         # Prioritized Experience Replay
         use_per=use_per,
         per_alpha=per_config.get('alpha', 0.6),

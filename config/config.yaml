@@ -11,7 +11,7 @@ environment:
   # - Each agent step = 4 frames = 200ms = 0.2 seconds
   # - So 1 second = 5 agent steps
   # - Recon: 20 seconds, Full: 60 seconds
-  episode_seconds: 30                # Episode duration (20s recon, 60s full)
+  episode_seconds: 10                # Episode duration (20s recon, 60s full)
   # max_steps is computed: episode_seconds * 5
   
   # Visual processing
@@ -74,15 +74,15 @@ dqn:
   num_actions: null                  # Auto-computed from action_space config
   
   # Learning
-  learning_rate: 0.002              # Adam learning rate
-  gamma: 0.99                        # Discount factor
+  learning_rate: 0.0008              # Adam learning rate
+  gamma: 0.98                        # Discount factor
   batch_size: 64                     # Training batch size
-  gradient_clip: 10.0                # Max gradient norm
+  gradient_clip: 1                # Max gradient norm
   
   # Replay Buffer
   replay_buffer:
     capacity: 10000                 # Buffer size (experiences)
-    min_size: 600                  # Min experiences before training
+    min_size: 1000                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
   # NOTE: decay_steps is in AGENT STEPS, not episodes

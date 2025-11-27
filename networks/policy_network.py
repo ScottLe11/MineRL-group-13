@@ -10,28 +10,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from .cnn import SmallCNN
+from .cnn import create_cnn
+from .attention import create_attention
 
 
 class ActorCriticNetwork(nn.Module):
     """
     Combined Actor-Critic network for PPO.
-    
+
     Architecture:
-    - Shared CNN backbone for visual features
+    - Shared CNN backbone for visual features (configurable)
+    - Optional attention mechanism
     - Scalar features concatenated after CNN
     - Separate heads for policy (actor) and value (critic)
-    
+
     This is more parameter-efficient than separate networks
     and allows feature sharing between actor and critic.
     """
-    
+
     def __init__(
-        self, 
+        self,
         num_actions: int = 23,
         input_channels: int = 4,
         num_scalars: int = 3,
-        hidden_size: int = 512
+        hidden_size: int = 512,
+        cnn_architecture: str = 'small',
+        attention_type: str = 'none'
     ):
         """
         Args:
@@ -39,16 +43,54 @@ class ActorCriticNetwork(nn.Module):
             input_channels: Number of stacked frames (default 4)
             num_scalars: Number of scalar observations (time, yaw, pitch)
             hidden_size: Size of hidden layers
+            cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
+            attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
         """
         super().__init__()
-        
+
         self.num_actions = num_actions
-        
-        # Shared CNN backbone
-        self.cnn = SmallCNN(input_channels=input_channels)
-        
+        self.num_scalars = num_scalars
+        self.cnn_architecture = cnn_architecture
+        self.attention_type = attention_type
+
+        # Shared CNN backbone (configurable architecture!)
+        self.cnn = create_cnn(cnn_architecture, input_channels=input_channels)
+        cnn_output_dim = self.cnn.get_output_dim()  # Architecture-dependent (256 or 512)
+
+        # Optional attention mechanism (same as DQN)
+        self.use_attention = (attention_type != 'none')
+        if self.use_attention:
+            if hasattr(self.cnn, 'conv'):
+                # Get number of channels from last conv layer
+                last_conv = None
+                for module in reversed(list(self.cnn.conv.modules())):
+                    if isinstance(module, nn.Conv2d):
+                        last_conv = module
+                        break
+                if last_conv is not None:
+                    conv_channels = last_conv.out_channels
+                    if attention_type in ['cbam', 'channel']:
+                        self.attention = create_attention(attention_type, channels=conv_channels)
+                    elif attention_type == 'spatial':
+                        self.attention = create_attention(attention_type, kernel_size=7)
+                    elif attention_type == 'treechop_bias':
+                        self.attention = create_attention(attention_type, height=7, width=7)
+                    else:
+                        self.attention = nn.Identity()
+                        self.use_attention = False
+                else:
+                    print(f"Warning: Could not find conv layer for attention, disabling attention")
+                    self.attention = nn.Identity()
+                    self.use_attention = False
+            else:
+                print(f"Warning: CNN architecture {cnn_architecture} doesn't support attention, disabling")
+                self.attention = nn.Identity()
+                self.use_attention = False
+        else:
+            self.attention = nn.Identity()
+
         # Feature dimension after CNN + scalars
-        self.feature_dim = 512 + num_scalars  # CNN outputs 512
+        self.feature_dim = cnn_output_dim + num_scalars
         
         # Actor head (policy): outputs action logits
         self.actor = nn.Sequential(
@@ -78,30 +120,46 @@ class ActorCriticNetwork(nn.Module):
     def forward(self, obs: dict) -> tuple:
         """
         Forward pass returning policy logits and value.
-        
+
         Args:
             obs: Dict with 'pov', 'time', 'yaw', 'pitch' tensors
-            
+
         Returns:
             (action_logits, value): Tuple of policy logits and state value
         """
         # Process visual observation
-        pov = obs['pov'].float() / 255.0  # Normalize to [0, 1]
-        cnn_features = self.cnn(pov)  # (batch, 512)
-        
+        pov = obs['pov']
+        if pov.max() > 1.0:
+            pov = pov.float() / 255.0  # Normalize to [0, 1]
+
+        # Extract visual features (with attention if enabled)
+        if self.use_attention and hasattr(self.cnn, 'conv') and hasattr(self.cnn, 'fc'):
+            # Conv features
+            conv_features = self.cnn.conv(pov)  # (batch, channels, H, W)
+
+            # Apply attention
+            attended_features, _ = self.attention(conv_features)  # (batch, channels, H, W)
+
+            # Flatten and FC layer
+            flattened = attended_features.view(attended_features.size(0), -1)
+            cnn_features = self.cnn.fc(flattened)  # (batch, cnn_output_dim)
+        else:
+            # No attention, use CNN directly
+            cnn_features = self.cnn(pov)  # (batch, cnn_output_dim)
+
         # Concatenate scalar features
         scalars = torch.stack([
             obs['time'].view(-1),
             obs['yaw'].view(-1),
             obs['pitch'].view(-1)
-        ], dim=1)  # (batch, 3)
-        
-        features = torch.cat([cnn_features, scalars], dim=1)  # (batch, 515)
-        
+        ], dim=1)  # (batch, num_scalars)
+
+        features = torch.cat([cnn_features, scalars], dim=1)  # (batch, feature_dim)
+
         # Actor and critic outputs
         action_logits = self.actor(features)  # (batch, num_actions)
         value = self.critic(features).squeeze(-1)  # (batch,)
-        
+
         return action_logits, value
     
     def get_action_and_value(self, obs: dict, action: torch.Tensor = None):

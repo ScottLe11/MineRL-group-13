@@ -154,6 +154,8 @@ class PPOAgent:
         n_steps: int = 2048,
         n_epochs: int = 10,
         batch_size: int = 64,
+        cnn_architecture: str = 'small',
+        attention_type: str = 'none',
         device: str = None
     ):
         """
@@ -171,6 +173,8 @@ class PPOAgent:
             n_steps: Number of steps to collect before update
             n_epochs: Number of epochs per update
             batch_size: Minibatch size
+            cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
+            attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
             device: Device to use ('cuda', 'mps', 'cpu', or None for auto)
         """
         # Device setup
@@ -183,12 +187,14 @@ class PPOAgent:
                 device = 'cpu'
         self.device = torch.device(device)
         print(f"PPOAgent using device: {self.device}")
-        
-        # Network
+
+        # Network (now with configurable architecture!)
         self.policy = ActorCriticNetwork(
             num_actions=num_actions,
             input_channels=input_channels,
-            num_scalars=num_scalars
+            num_scalars=num_scalars,
+            cnn_architecture=cnn_architecture,
+            attention_type=attention_type
         ).to(self.device)
         
         # Optimizer

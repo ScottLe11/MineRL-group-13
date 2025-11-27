@@ -234,7 +234,22 @@ class DQNAgent:
             'last_100_unique': len(set(self.last_actions)) if self.last_actions else 0,
             'last_100_actions': self.last_actions.copy()
         }
-    
+
+    def get_q_values(self, state: Dict) -> np.ndarray:
+        """
+        Get Q-values for all actions for a given state.
+
+        Args:
+            state: Observation dict with 'pov', 'time', 'yaw', 'pitch'
+
+        Returns:
+            Array of Q-values for each action (shape: [num_actions])
+        """
+        with torch.no_grad():
+            state_tensor = self._state_to_tensor(state)
+            q_values = self.q_network(state_tensor)
+            return q_values.cpu().numpy()[0]  # [0] to remove batch dimension
+
     def store_experience(self, state: Dict, action: int, reward: float, 
                         next_state: Dict, done: bool):
         """Store experience in replay buffer."""

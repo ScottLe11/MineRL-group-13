@@ -331,7 +331,7 @@ class VideoRecorder:
             self.add_frame(obs, reward, action, info)
             
             total_reward += reward
-            wood_collected += info.get('wood_this_frame', 0)
+            wood_collected = info.get('wood_count', 0)  # Current wood inventory (net: mining - using)
             
             obs = next_obs
             

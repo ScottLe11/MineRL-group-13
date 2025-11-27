@@ -1,33 +1,29 @@
 #!/usr/bin/env python3
 """
-Training script for the MineRL Tree-Chopping DQN Agent.
+Training dispatcher for MineRL Tree-Chopping Agent.
+
+This script automatically selects and runs the appropriate training script
+based on the algorithm specified in the config file.
 
 Usage:
     python scripts/train.py                    # Use default config
     python scripts/train.py --config path.yaml # Use custom config
     python scripts/train.py --render           # Show Minecraft window during training
-    
-Features:
-    - Supports multiple CNN architectures (tiny, small, medium, wide, deep)
-    - Prioritized Experience Replay (PER) support
-    - Soft or hard target network updates
-    - Curriculum learning with configurable starting conditions
+    python scripts/train.py --algorithm dqn    # Override config algorithm
+
+Supported algorithms:
+    - dqn: Deep Q-Network (uses train_dqn.py)
+    - ppo: Proximal Policy Optimization (uses train_ppo.py)
 """
 
 import argparse
 import os
 import sys
-import random
-import numpy as np
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
-import torch
-import gym
-from gym.envs.registration import register
-
-# Project imports
 from utils.config import load_config
 from utils.logger import Logger
 from agent.dqn import DQNAgent
@@ -218,70 +214,7 @@ def create_env(config: dict):
     return env
 
 
-def create_mock_env(env_config: dict, reward_config: dict = None, max_episode_steps: int = None):
-    """Create a mock environment for testing without MineRL installed."""
-
-    if reward_config is None:
-        reward_config = {'wood_value': 1.0, 'step_penalty': -0.001}
-
-    class MockMineRLEnv:
-        """Mock environment that mimics the wrapped MineRL interface."""
-
-        def __init__(self, config, rewards, max_steps):
-            # Compute max_steps from episode_seconds (1 step = 4 frames = 200ms)
-            self.max_steps = max_steps if max_steps else config.get('episode_seconds', 20) * 5
-            self.frame_shape = tuple(config['frame_shape'])
-            self.wood_value = rewards.get('wood_value', 1.0)
-            self.step_penalty = rewards.get('step_penalty', -0.001)
-            self.current_step = 0
-
-            # Observation space matches ObservationWrapper output
-            self.observation_space = gym.spaces.Dict({
-                'pov': gym.spaces.Box(0, 255, (4, *self.frame_shape), dtype=np.uint8),
-                'time_left': gym.spaces.Box(0, 1, (1,), dtype=np.float32),
-                'yaw': gym.spaces.Box(-1, 1, (1,), dtype=np.float32),
-                'pitch': gym.spaces.Box(-1, 1, (1,), dtype=np.float32),
-            })
-
-            # Action space: 23 actions from ExtendedActionWrapper
-            self.action_space = gym.spaces.Discrete(23)
-
-        def reset(self):
-            self.current_step = 0
-            return {
-                'pov': np.zeros((4, *self.frame_shape), dtype=np.uint8),
-                'time_left': np.array([1.0], dtype=np.float32),
-                'yaw': np.array([0.0], dtype=np.float32),
-                'pitch': np.array([0.0], dtype=np.float32),
-            }
-
-        def step(self, action):
-            self.current_step += 1
-
-            # Mock observation - time_left decreases during episode
-            obs = {
-                'pov': np.random.randint(0, 256, (4, *self.frame_shape), dtype=np.uint8),
-                'time_left': np.array([max(0.0, (self.max_steps - self.current_step) / self.max_steps)], dtype=np.float32),
-                'yaw': np.array([0.0], dtype=np.float32),
-                'pitch': np.array([0.0], dtype=np.float32),
-            }
-
-            # Mock reward: log × wood_value + step penalty
-            logs = 1 if random.random() < 0.01 else 0  # 1% chance
-            reward = (logs * self.wood_value) + self.step_penalty
-
-            done = self.current_step >= self.max_steps
-            info = {'wood_this_frame': logs}
-
-            return obs, reward, done, info
-
-        def close(self):
-            pass
-
-    return MockMineRLEnv(env_config, reward_config, max_episode_steps)
-
-
-def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
+def train(config: dict, render: bool = False):
     """
     Main training loop - trains for a fixed number of EPISODES.
 
@@ -360,13 +293,6 @@ def train(config: dict, use_mock: bool = False, expert_data_path: str = None):
         log_dir=config['training']['log_dir'],
         experiment_name=f"treechop_dqn_{config.get('seed', 'noseed')}"
     )
-    
-    # load in recordings
-    if expert_data_path:
-        print("HERE")
-        load_and_prefill_buffer(agent, expert_data_path)
-    else:
-        print("No expert data path provided; skipping buffer prefill.")
     
     # Training parameters (episode-based)
     num_episodes = config['training']['num_episodes']
@@ -556,114 +482,6 @@ def save_checkpoint(agent: DQNAgent, config: dict, episode: int, final: bool = F
     
     print(f"💾 Saved: {path}")
 
-def load_and_prefill_buffer(agent: DQNAgent, expert_data_path: str):
-    """Load expert data from NPZ and prefill the agent's replay buffer."""
-    if not os.path.exists(expert_data_path):
-        print(f"Warning: Expert data file not found at {expert_data_path}. Skipping prefill.")
-        return
-
-    print(f"Loading expert data from {expert_data_path}...")
-    try:
-        data = np.load(expert_data_path)
-    except Exception as e:
-        print(f"Error loading NPZ file: {e}. Skipping prefill.")
-        return
-
-    # Check for required arrays based on the recommended structure
-    required_keys = ['obs_pov', 'obs_time', 'obs_yaw', 'obs_pitch', 
-                     'next_obs_pov', 'next_obs_time', 'next_obs_yaw', 'next_obs_pitch', 
-                     'actions', 'rewards', 'dones']
-    
-    if not all(k in data for k in required_keys):
-        # We assume for simplicity that next_obs_X are not stored, and we compute them from current obs and array shifts
-        # But if the user followed the pkl_parser.py which only stores "obs" and "actions" we need to be explicit.
-        # Given the context, we'll try to reconstruct the transition (S, A, R, S', D) from the arrays.
-        
-        # If the user only saves single-step data, we need all the required keys.
-        # Let's assume the user has the 'obs_pov' etc. for both current and next state, or we compute the next state by shifting.
-        
-        # We will assume a simpler structure for the demo NPZ file, where 'obs_pov' etc are for state S, and S' is S[t+1]
-        
-        # *** Robust check for shifted data (S, S') ***
-        if 'obs_pov' not in data or 'actions' not in data or 'rewards' not in data or 'dones' not in data:
-            print("Error: Missing core arrays (pov, actions, rewards, dones) in NPZ. Skipping prefill.")
-            return
-
-        N = len(data['actions'])
-        
-        # Use simple array slicing to create (S, S') pairs (S' = S[1:], S = S[:-1])
-        # Note: This is an approximation since done=True breaks the sequence.
-        
-        obs_pov = data['obs_pov'][:-1]
-        obs_time = data['obs_time'][:-1]
-        obs_yaw = data['obs_yaw'][:-1]
-        obs_pitch = data['obs_pitch'][:-1]
-        
-        next_obs_pov = data['obs_pov'][1:]
-        next_obs_time = data['obs_time'][1:]
-        next_obs_yaw = data['obs_yaw'][1:]
-        next_obs_pitch = data['obs_pitch'][1:]
-
-        actions = data['actions'][:-1]
-        rewards = data['rewards'][:-1]
-        dones = data['dones'][:-1]
-        
-        # If the last step of the *current* transition was 'done', the next state is irrelevant.
-        # The shifted 'dones' array works as a termination mask.
-        
-    else:
-        # Full set of arrays is available (recommended way)
-        N = len(data['actions'])
-        obs_pov = data['obs_pov']
-        obs_time = data['obs_time']
-        obs_yaw = data['obs_yaw']
-        obs_pitch = data['obs_pitch']
-        next_obs_pov = data['next_obs_pov']
-        next_obs_time = data['next_obs_time']
-        next_obs_yaw = data['next_obs_yaw']
-        next_obs_pitch = data['next_obs_pitch']
-        actions = data['actions']
-        rewards = data['rewards']
-        dones = data['dones']
-    
-    total_transitions = len(actions)
-    
-    print(f"Found {total_transitions} transitions in expert data.")
-    
-    for i in range(total_transitions):
-        # 1. Construct current state dict (S)
-        state = {
-            'pov': obs_pov[i],
-            'time': obs_time[i],
-            'yaw': obs_yaw[i],
-            'pitch': obs_pitch[i],
-        }
-        
-        # 2. Construct next state dict (S')
-        next_state = {
-            'pov': next_obs_pov[i],
-            'time': next_obs_time[i],
-            'yaw': next_obs_yaw[i],
-            'pitch': next_obs_pitch[i],
-        }
-        
-        # 3. Store in agent's buffer
-        agent.store_experience(
-            state,
-            actions[i],
-            rewards[i],
-            next_state,
-            dones[i]
-        )
-        
-        # Stop once buffer is full enough to start training
-        if agent.replay_buffer.is_ready():
-            break
-
-    print(f"Finished prefilling buffer. Current size: {len(agent.replay_buffer)}")
-    if agent.replay_buffer.is_ready():
-        print("Replay buffer is ready for immediate training.")
-
 
 def main():
     parser = argparse.ArgumentParser(description="Train MineRL Tree-Chopping DQN Agent")
@@ -675,25 +493,47 @@ def main():
                         help='Path to expert data NPZ file to prefill replay buffer') 
     parser.add_argument('--render', action='store_true',
                         help='Render the Minecraft window during training')
+    parser.add_argument('--algorithm', type=str, choices=['dqn', 'ppo'], default=None,
+                        help='Override algorithm from config (dqn or ppo)')
     args = parser.parse_args()
 
     # Load config
     config = load_config(args.config)
 
-    print("=" * 60)
-    print("MineRL Tree-Chopping DQN Training")
-    print("=" * 60)
-    print(f"Config: {args.config or 'config/config.yaml'}")
-    print(f"Device: {config['device']}")
-    print(f"Episodes: {config['training']['num_episodes']}")
-    print(f"Episode length: {config['environment']['episode_seconds']}s")
-    print(f"Render: {args.render}")
-    print("=" * 60)
+    # Determine algorithm
+    if args.algorithm:
+        algorithm = args.algorithm.lower()
+        print(f"Algorithm override: using {algorithm.upper()} (from command line)")
+    else:
+        algorithm = config.get('algorithm', 'dqn').lower()
+        print(f"Algorithm: {algorithm.upper()} (from config)")
 
-    # Train
-    train(config, render=args.render)
+    # Validate algorithm
+    if algorithm not in ['dqn', 'ppo']:
+        print(f"Error: Unknown algorithm '{algorithm}'. Must be 'dqn' or 'ppo'.")
+        sys.exit(1)
+
+    # Import and run the appropriate trainer
+    print(f"\n{'='*60}")
+    print(f"Dispatching to {algorithm.upper()} trainer...")
+    print(f"{'='*60}\n")
+
+    if algorithm == 'dqn':
+        # Import DQN trainer
+        from trainers import train_dqn
+        # Update config to ensure DQN
+        config['algorithm'] = 'dqn'
+        # Run DQN training
+        train_dqn.train(config, render=args.render)
+
+    elif algorithm == 'ppo':
+        # Import PPO trainer
+        from trainers import train_ppo
+        # Update config to ensure PPO
+        config['algorithm'] = 'ppo'
+        # Run PPO training
+        train_ppo.train(config, render=args.render)
 
 
 if __name__ == "__main__":
     main()
-

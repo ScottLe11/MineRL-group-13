@@ -108,6 +108,7 @@ class RewardWrapper(gym.Wrapper):
         info['wood_delta'] = wood_delta
         info['wood_count'] = current_wood_count
         info['wood_reward'] = wood_reward
+        info['wood_this_frame'] = max(0, wood_delta)  # Only count wood collected (not used)
 
         if done:
             info['episode_wood_mined'] = self.episode_wood_mined

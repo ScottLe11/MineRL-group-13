@@ -11,7 +11,7 @@ environment:
   # - Each agent step = 4 frames = 200ms = 0.2 seconds
   # - So 1 second = 5 agent steps
   # - Recon: 20 seconds, Full: 60 seconds
-  episode_seconds: 10                # Episode duration (20s recon, 60s full)
+  episode_seconds: 20                # Episode duration (20s recon, 60s full)
   # max_steps is computed: episode_seconds * 5
   
   # Visual processing
@@ -81,27 +81,27 @@ dqn:
   
   # Replay Buffer
   replay_buffer:
-    capacity: 10000                 # Buffer size (experiences)
-    min_size: 1000                  # Min experiences before training
+    capacity: 30000                 # Buffer size (experiences)
+    min_size: 3000                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
   # NOTE: decay_steps is in AGENT STEPS, not episodes
   # - Recon (200 eps × 300 steps = 60k): use 50000 for full decay
   # - Full (1000 eps × 300 steps = 300k): use 250000 for gradual decay
   exploration:
-    epsilon_start: 1.0               # Starting epsilon
+    epsilon_start: 0.95               # Starting epsilon
     epsilon_end: 0.05                 # Final epsilon
-    epsilon_decay_steps: 50000       # Steps for linear decay
+    epsilon_decay_steps: 20000       # Steps for linear decay
   
   # Target Network
   target_update:
-    method: "hard"                   # "soft" or "hard"
+    method: "soft"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
     hard_update_freq: 200           # Steps between hard updates (if hard)
   
   # Prioritized Experience Replay (optional)
   prioritized_replay:
-    enabled: false                   # Use PER instead of uniform sampling
+    enabled: true                   # Use PER instead of uniform sampling
     alpha: 0.6                       # Priority exponent (0=uniform, 1=full prioritization)
     beta_start: 0.4                  # Initial importance sampling exponent
     beta_end: 1.0                    # Final importance sampling exponent (anneals with epsilon)
@@ -114,13 +114,16 @@ training:
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
   num_episodes: 200                  # Total episodes to train
-  train_freq: 10                      # Train every N agent steps
+  train_freq: 8                      # Train every N agent steps
   
   # Logging & Saving (in episodes)
-  log_freq: 10                       # Log metrics every N episodes
+  log_freq: 5                        # Log metrics every N episodes
   save_freq: 50                      # Save checkpoint every N episodes
   eval_freq: 50                      # Evaluate every N episodes
   eval_episodes: 5                   # Episodes per evaluation
+
+  # Environment recreation (prevent MineRL memory leaks)
+  env_recreation_interval: 20        # Recreate env every N episodes (lower if timeouts persist)
   
   # Paths
   checkpoint_dir: "checkpoints"
@@ -150,7 +153,7 @@ ppo:
 # =============================================================================
 # ALGORITHM SELECTION
 # =============================================================================
-algorithm: "dqn"                     # "dqn" or "ppo"
+algorithm: "ppo"                     # "dqn" or "ppo"
 
 # =============================================================================
 # REWARD (Wood Inventory-Based)

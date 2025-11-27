@@ -151,7 +151,7 @@ def train(config: dict, render: bool = False):
     recent_wood = []  # Track last 50 episodes
 
     # Environment recreation interval (helps prevent MineRL memory leaks)
-    env_recreation_interval = 50  # Recreate environment every N episodes
+    env_recreation_interval = config['training'].get('env_recreation_interval', 50)
 
     # =========================================================================
     # MAIN TRAINING LOOP (episode-based)
@@ -275,8 +275,8 @@ def train(config: dict, render: bool = False):
                     ])
                     print(f"  [Top Q-values] {top_q_str}")
                 except Exception as e:
-                    # Silently skip Q-value logging if there's an error
-                    pass
+                    # Show error if Q-value logging fails
+                    print(f"  [Top Q-values] Error: {type(e).__name__}: {e}")
 
             # Print action statistics to diagnose exploration issues
             if hasattr(agent, 'get_action_stats'):
@@ -327,27 +327,48 @@ def train(config: dict, render: bool = False):
     print(f"{'='*60}")
 
 
-def save_checkpoint(agent: DQNAgent, config: dict, episode: int, final: bool = False, best: bool = False):
-    """Save a training checkpoint."""
+def save_checkpoint(agent: DQNAgent, config: dict, episode: int, final: bool = False, best: bool = False, save_buffer: bool = True):
+    """
+    Save a training checkpoint.
+
+    Args:
+        agent: DQN agent to save
+        config: Configuration dict
+        episode: Current episode number
+        final: Whether this is the final checkpoint
+        best: Whether this is the best model so far
+        save_buffer: Whether to save replay buffer (large file, ~100-500MB)
+    """
     checkpoint_dir = config['training']['checkpoint_dir']
     os.makedirs(checkpoint_dir, exist_ok=True)
-    
+
     if final:
         path = os.path.join(checkpoint_dir, "final_model.pt")
     elif best:
         path = os.path.join(checkpoint_dir, "best_model.pt")
     else:
         path = os.path.join(checkpoint_dir, f"checkpoint_ep{episode}.pt")
-    
-    torch.save({
+
+    # Build checkpoint dict
+    checkpoint = {
         'episode': episode,
         'step_count': agent.step_count,
         'train_count': agent.train_count,
         'q_network_state_dict': agent.q_network.state_dict(),
         'target_network_state_dict': agent.target_network.state_dict(),
         'optimizer_state_dict': agent.optimizer.state_dict(),
-    }, path)
-    
+        # Action tracking
+        'action_counts': agent.action_counts,
+        'last_actions': agent.last_actions,
+    }
+
+    # Optionally save replay buffer (can be large!)
+    if save_buffer and len(agent.replay_buffer) > 0:
+        checkpoint['replay_buffer'] = list(agent.replay_buffer.buffer)
+        buffer_size_mb = len(agent.replay_buffer) * 84 * 84 * 4 * 4 / (1024 * 1024)  # Rough estimate
+        print(f"💾 Saving with replay buffer (~{buffer_size_mb:.1f}MB)...")
+
+    torch.save(checkpoint, path)
     print(f"💾 Saved: {path}")
 
 

@@ -147,7 +147,7 @@ class DQNAgent:
                 alpha=per_alpha,
                 beta_start=per_beta_start,
                 beta_end=per_beta_end,
-                beta_decay_steps=epsilon_decay_steps  # Anneal beta with epsilon
+                beta_anneal_steps=epsilon_decay_steps  # Anneal beta with epsilon
             )
             print("Using Prioritized Experience Replay")
         else:
@@ -194,24 +194,66 @@ class DQNAgent:
     def select_action(self, state: Dict, explore: bool = True) -> int:
         """
         Select action using epsilon-greedy policy.
-        
+
         Args:
             state: Observation dict with 'pov', 'time', 'yaw', 'pitch'
             explore: Whether to use exploration (False for evaluation)
-        
+
         Returns:
             action: Selected action index (0-22)
         """
         epsilon = self.get_epsilon() if explore else 0.0
-        
+
         if random.random() < epsilon:
-            return random.randint(0, self.num_actions - 1)
-        
+            action = random.randint(0, self.num_actions - 1)
+        else:
+            with torch.no_grad():
+                state_tensor = self._state_to_tensor(state)
+                q_values = self.q_network(state_tensor)
+                action = q_values.argmax(dim=1).item()
+
+        # Track action frequency (for debugging)
+        self.action_counts[action] += 1
+        self.last_actions.append(action)
+        if len(self.last_actions) > 100:  # Keep last 100
+            self.last_actions.pop(0)
+
+        return action
+
+    def get_q_values(self, state: Dict) -> np.ndarray:
+        """
+        Get Q-values for all actions for a given state.
+
+        Args:
+            state: Observation dict with 'pov', 'time', 'yaw', 'pitch'
+
+        Returns:
+            Array of Q-values for each action (shape: [num_actions])
+        """
         with torch.no_grad():
             state_tensor = self._state_to_tensor(state)
             q_values = self.q_network(state_tensor)
-            return q_values.argmax(dim=1).item()
-    
+            return q_values.cpu().numpy()[0]  # [0] to remove batch dimension
+
+    def get_action_stats(self) -> dict:
+        """
+        Get statistics about action selection.
+
+        Returns:
+            Dict with action counts, frequencies, and recent action diversity
+        """
+        total = sum(self.action_counts)
+        if total == 0:
+            return {}
+
+        return {
+            'total_actions': total,
+            'action_counts': self.action_counts.copy(),
+            'action_frequencies': [count / total for count in self.action_counts],
+            'last_100_unique': len(set(self.last_actions)) if self.last_actions else 0,
+            'last_100_actions': self.last_actions.copy()
+        }
+
     def store_experience(self, state: Dict, action: int, reward: float, 
                         next_state: Dict, done: bool):
         """Store experience in replay buffer."""
@@ -312,11 +354,12 @@ class DQNAgent:
     
     def _state_to_tensor(self, state: Dict) -> Dict:
         """Convert single state dict to batched tensor dict."""
+        # Use numpy arrays to avoid "extremely slow" warning
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time': torch.tensor([state.get('time', 0.0)], dtype=torch.float32, device=self.device),
-            'yaw': torch.tensor([state.get('yaw', 0.0)], dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor([state.get('pitch', 0.0)], dtype=torch.float32, device=self.device)
+            'time': torch.tensor(np.array([state.get('time', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device)
         }
     
     def _batch_states_to_tensor(self, states: list) -> Dict:

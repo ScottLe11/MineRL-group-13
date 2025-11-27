@@ -249,6 +249,7 @@ class ExtendedActionWrapper(ActionWrapper):
         info['action_name'] = action_name
         info['attack_steps'] = num_steps
         info['attack_frames'] = total_frames
+        info['macro_steps'] = total_frames  # Report frames for training loop step counting
         return obs, total_reward, done, info
 
     def _execute_macro(self, action_index: int):

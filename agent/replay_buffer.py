@@ -212,6 +212,7 @@ class PrioritizedReplayBuffer:
         self.tree = SumTree(capacity)
         self.max_priority = 1.0  # Track max for new experiences
         self.step_count = 0
+        self.beta = beta_start  # Current beta value for importance sampling
     
     def _get_beta(self) -> float:
         """Get current beta value based on annealing schedule."""
@@ -301,15 +302,17 @@ class PrioritizedReplayBuffer:
         
         self.step_count += 1
         
+        # Update beta based on annealing schedule
+        self.beta = self._get_beta()
+        
         # Compute importance sampling weights
-        beta = self._get_beta()
         n = len(self.tree)
         
         # P(i) = priority_i / sum(priorities)
         probs = np.array(priorities) / self.tree.total()
         
         # w_i = (N * P(i))^(-beta)
-        weights = (n * probs) ** (-beta)
+        weights = (n * probs) ** (-self.beta)
         
         # Normalize weights by max weight for stability
         weights = weights / weights.max()
@@ -336,11 +339,31 @@ class PrioritizedReplayBuffer:
     def __len__(self) -> int:
         return len(self.tree)
     
+    def get_all_experiences(self) -> List:
+        """
+        Get all experiences in the buffer (for checkpointing).
+        
+        Returns:
+            List of experience tuples: (state, action, reward, next_state, done)
+        """
+        experiences = []
+        n = len(self.tree)
+        if n == 0:
+            return experiences
+        
+        # Extract all valid experiences from the circular buffer
+        for i in range(min(n, self.capacity)):
+            experience = self.tree.data[i]
+            if experience is not None:
+                experiences.append(experience)
+        return experiences
+    
     def clear(self):
         """Clear all experiences."""
         self.tree = SumTree(self.capacity)
         self.max_priority = 1.0
         self.step_count = 0
+        self.beta = self.beta_start
 
 
 if __name__ == "__main__":

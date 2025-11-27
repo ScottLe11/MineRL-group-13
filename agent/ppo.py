@@ -217,22 +217,53 @@ class PPOAgent:
         # Counters
         self.step_count = 0
         self.update_count = 0
+
+        # Action frequency tracking (for debugging)
+        self.action_counts = [0] * num_actions
+        self.last_actions = []  # Track last N actions
     
     def select_action(self, state: dict) -> Tuple[int, float, float]:
         """
         Select action using current policy.
-        
+
         Args:
             state: Observation dict
-            
+
         Returns:
             (action, log_prob, value): Action, its log probability, and state value
         """
         with torch.no_grad():
             state_tensor = self._state_to_tensor(state)
             action, log_prob, _, value = self.policy.get_action_and_value(state_tensor)
-            
-        return action.item(), log_prob.item(), value.item()
+
+        action_int = action.item()
+
+        # Track action frequency (for debugging)
+        self.action_counts[action_int] += 1
+        self.last_actions.append(action_int)
+        if len(self.last_actions) > 100:  # Keep last 100
+            self.last_actions.pop(0)
+
+        return action_int, log_prob.item(), value.item()
+
+    def get_action_stats(self) -> dict:
+        """
+        Get statistics about action selection.
+
+        Returns:
+            Dict with action counts, frequencies, and recent action diversity
+        """
+        total = sum(self.action_counts)
+        if total == 0:
+            return {}
+
+        return {
+            'total_actions': total,
+            'action_counts': self.action_counts.copy(),
+            'action_frequencies': [count / total for count in self.action_counts],
+            'last_100_unique': len(set(self.last_actions)) if self.last_actions else 0,
+            'last_100_actions': self.last_actions.copy()
+        }
     
     def store_transition(self, state: dict, action: int, log_prob: float,
                         reward: float, value: float, done: bool):
@@ -315,11 +346,12 @@ class PPOAgent:
     
     def _state_to_tensor(self, state: dict) -> dict:
         """Convert single state to tensor dict."""
+        # Use numpy arrays to avoid "extremely slow" warning
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time': torch.tensor([state.get('time', 0.0)], dtype=torch.float32, device=self.device),
-            'yaw': torch.tensor([state.get('yaw', 0.0)], dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor([state.get('pitch', 0.0)], dtype=torch.float32, device=self.device),
+            'time': torch.tensor(np.array([state.get('time', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
         }
     
     def _batch_to_tensor(self, obs: dict) -> dict:
@@ -338,6 +370,8 @@ class PPOAgent:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
             'update_count': self.update_count,
+            'action_counts': self.action_counts,
+            'last_actions': self.last_actions,
         }, path)
         print(f"PPO agent saved to {path}")
     
@@ -348,6 +382,9 @@ class PPOAgent:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.step_count = checkpoint['step_count']
         self.update_count = checkpoint['update_count']
+        # Load action tracking if available (backwards compatible)
+        self.action_counts = checkpoint.get('action_counts', [0] * self.num_actions)
+        self.last_actions = checkpoint.get('last_actions', [])
         print(f"PPO agent loaded from {path}")
 
 

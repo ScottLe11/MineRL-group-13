@@ -11,7 +11,7 @@ environment:
   # - Each agent step = 4 frames = 200ms = 0.2 seconds
   # - So 1 second = 5 agent steps
   # - Recon: 20 seconds, Full: 60 seconds
-  episode_seconds: 20                # Episode duration (20s recon, 60s full)
+  episode_seconds: 25                # Episode duration (20s recon, 60s full)
   # max_steps is computed: episode_seconds * 5
   
   # Visual processing
@@ -41,7 +41,7 @@ network:
   # - spatial: Pure spatial attention (learns where to look)
   # - cbam: Combined channel + spatial (full CBAM module, most comprehensive)
   # - treechop_bias: Spatial attention biased toward screen center and hotbar
-  attention: "none"
+  attention: "spatial"
   
 # =============================================================================
 # ACTION SPACE
@@ -74,15 +74,15 @@ dqn:
   num_actions: null                  # Auto-computed from action_space config
   
   # Learning
-  learning_rate: 0.0008              # Adam learning rate
-  gamma: 0.98                        # Discount factor
-  batch_size: 64                     # Training batch size
-  gradient_clip: 1                # Max gradient norm
+  learning_rate: 0.0001              # Adam learning rate
+  gamma: 0.99                        # Discount factor
+  batch_size: 32                     # Training batch size
+  gradient_clip: 5                # Max gradient norm
   
   # Replay Buffer
   replay_buffer:
-    capacity: 30000                 # Buffer size (experiences)
-    min_size: 3000                  # Min experiences before training
+    capacity: 50000                 # Buffer size (experiences)
+    min_size: 5000                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
   # NOTE: decay_steps is in AGENT STEPS, not episodes
@@ -95,9 +95,9 @@ dqn:
   
   # Target Network
   target_update:
-    method: "soft"                   # "soft" or "hard"
+    method: "hard"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
-    hard_update_freq: 200           # Steps between hard updates (if hard)
+    hard_update_freq: 500           # Steps between hard updates (if hard)
   
   # Prioritized Experience Replay (optional)
   prioritized_replay:
@@ -113,8 +113,8 @@ training:
   # Training duration (in EPISODES, not steps)
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
-  num_episodes: 200                  # Total episodes to train
-  train_freq: 8                      # Train every N agent steps
+  num_episodes: 400                  # Total episodes to train
+  train_freq: 12                      # Train every N agent steps
   
   # Logging & Saving (in episodes)
   log_freq: 5                        # Log metrics every N episodes
@@ -153,7 +153,7 @@ ppo:
 # =============================================================================
 # ALGORITHM SELECTION
 # =============================================================================
-algorithm: "ppo"                     # "dqn" or "ppo"
+algorithm: "dqn"                     # "dqn" or "ppo"
 
 # =============================================================================
 # REWARD (Wood Inventory-Based)
@@ -171,8 +171,8 @@ algorithm: "ppo"                     # "dqn" or "ppo"
 #   - Total wood reward: +7.0 (same as final inventory!)
 #
 rewards:
-  wood_value: 1.0                    # Points per log change (mined or used)
-  step_penalty: 0               # Penalty per frame (encourages speed)
+  wood_value: 5.0                    # Points per log change (mined or used)
+  step_penalty: -0.001               # Penalty per frame (encourages speed)
 
 # =============================================================================
 # HARDWARE

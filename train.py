@@ -31,6 +31,10 @@ import socket
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import torch
+import torch.nn.functional as F
+from torch.utils.data import TensorDataset, DataLoader
+import torch.optim as optim
+from typing import Dict
 
 # Project imports
 from utils.config import load_config
@@ -273,6 +277,154 @@ def save_checkpoint(agent, config: dict, episode: int, final: bool = False,
     print(f"💾 Saved: {path}")
 
 
+#recording training
+def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
+    """
+    Loads processed expert data and converts it to PyTorch tensors.
+
+    Args:
+        filename: Path to the .npz file created by pkl_parser.py
+
+    Returns:
+        Dictionary of PyTorch tensors ready for DataLoader.
+    """
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Expert data file not found: {filename}. Please run pkl_parser.py first.")
+
+    data = np.load(filename)
+    print(f"Loaded {len(data['actions'])} transitions from {filename}")
+
+    # Convert NumPy arrays to PyTorch tensors
+    tensors = {
+        'pov': torch.tensor(data['obs_pov'], dtype=torch.uint8).float().div(255.0), # Normalize POV here
+        'time': torch.tensor(data['obs_time'], dtype=torch.float32),
+        'yaw': torch.tensor(data['obs_yaw'], dtype=torch.float32),
+        'pitch': torch.tensor(data['obs_pitch'], dtype=torch.float32),
+        'actions': torch.tensor(data['actions'], dtype=torch.long)
+    }
+    
+    # Ensure scalar tensors have correct shape (N, 1)
+    for k in ['time', 'yaw', 'pitch']:
+        if tensors[k].dim() == 1:
+            tensors[k] = tensors[k].unsqueeze(1)
+
+    return tensors
+
+
+def train_bc(config: dict, env, agent, logger):
+    """
+    Behavioral Cloning (BC) training loop (Supervised Learning).
+
+    Args:
+        config: Configuration dict
+        env: MineRL environment (used only for initialization/cleanup)
+        agent: DQNAgent (used as the policy network)
+        logger: TensorBoard logger
+    """
+    bc_config = config.get('bc', {})
+    training_config = config['training']
+    device = agent.device
+    
+    # 1. Load Data
+    data_path = bc_config.get('data_path', 'bc_expert_data.npz')
+    print(f"\n📦 Starting Behavioral Cloning (BC) using data from: {data_path}")
+    expert_tensors = load_bc_data(data_path)
+    
+    # 2. Setup DataLoader
+    dataset = TensorDataset(
+        expert_tensors['pov'].to(device), 
+        expert_tensors['time'].to(device),
+        expert_tensors['yaw'].to(device),
+        expert_tensors['pitch'].to(device),
+        expert_tensors['actions'].to(device)
+    )
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=bc_config.get('batch_size', 32), 
+        shuffle=True
+    )
+    num_epochs = training_config.get('num_episodes', 100)
+    
+    # 3. Use DQN Network as Policy and Setup Optimizer/Loss (no target network needed)
+    # The DQNAgent object (agent) already contains the Q-Network, which we will treat as the policy network.
+    
+    optimizer = optim.Adam(agent.q_network.parameters(), lr=bc_config.get('learning_rate', 1e-4))
+    
+    global_step = 0
+    
+    print(f"Training for {num_epochs} epochs with {len(dataloader)} batches per epoch.")
+
+    # 4. Main BC Training Loop
+    for epoch in range(1, num_epochs + 1):
+        total_epoch_loss = 0
+        num_batches = 0
+        
+        for pov_batch, time_batch, yaw_batch, pitch_batch, action_batch in dataloader:
+            # Construct observation dictionary for the DQN network
+            obs_batch = {
+                'pov': pov_batch,
+                'time': time_batch,
+                'yaw': yaw_batch,
+                'pitch': pitch_batch
+            }
+            
+            # Forward pass: get Q-values (logits)
+            # We use the Q-network's output as the action preference scores (logits)
+            q_values = agent.q_network(obs_batch)
+            
+            # Loss: Cross-Entropy between Q-value logits and expert actions
+            # F.cross_entropy expects logits (not softmaxed probabilities)
+            loss = F.cross_entropy(q_values, action_batch)
+            
+            # Gradient clipping (max_grad_norm)
+            max_grad_norm = bc_config.get('gradient_clip', 10.0)
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(agent.q_network.parameters(), max_norm=max_grad_norm)
+            optimizer.step()
+            
+            total_epoch_loss += loss.item()
+            num_batches += 1
+            global_step += 1
+
+            # Log metrics every N steps
+            if global_step % 50 == 0:
+                avg_loss = total_epoch_loss / num_batches
+                logger.log_training_step(
+                    step=global_step, 
+                    loss=avg_loss, 
+                    q_mean=q_values.mean().item()
+                )
+
+        # Log end of epoch metrics
+        avg_loss = total_epoch_loss / num_batches
+        logger.log_scalar("bc/loss_epoch", avg_loss, epoch)
+        
+        # Console logging
+        print(f"Epoch {epoch}/{num_epochs} | Loss: {avg_loss:.4f} | Global Steps: {global_step}")
+
+        # Save checkpoint
+        if epoch % training_config.get('save_freq', 50) == 0:
+            save_checkpoint(agent, config, epoch, save_buffer=False)
+            
+    # Final save
+    save_checkpoint(agent, config, num_epochs, final=True, save_buffer=False)
+    
+    print(f"\n{'='*60}")
+    print(f"BEHAVIORAL CLONING COMPLETE")
+    print(f"{'='*60}")
+    print(f"Total epochs: {num_epochs}")
+    print(f"Total steps (batches): {global_step}")
+    print(f"{'='*60}")
+
+    # No environment usage during BC, so just return
+    return env
+
+
+
+
+
 def train(config: dict, render: bool = False):
     """
     Main training entry point - provides common infrastructure and routes to algorithm.
@@ -294,6 +446,28 @@ def train(config: dict, render: bool = False):
     # Create agent
     agent = create_agent(config, num_actions=env.action_space.n)
 
+    algorithm = config.get('algorithm', 'dqn')
+    
+    if algorithm == 'dqn':
+        # Check if BC checkpoint exists to load weights
+        checkpoint_dir = config['training']['checkpoint_dir']
+        bc_checkpoint_path = os.path.join(checkpoint_dir, "final_model_bc.pt")
+        
+        if os.path.exists(bc_checkpoint_path):
+            print(f"\n🧠 Loading BC pre-trained weights: {bc_checkpoint_path}")
+            
+            # Load checkpoint data
+            checkpoint = torch.load(bc_checkpoint_path, map_location=device)
+            
+            # Load Q-Network weights from BC checkpoint
+            if 'q_network_state_dict' in checkpoint:
+                 agent.q_network.load_state_dict(checkpoint['q_network_state_dict'])
+                 # Initialize target network with pre-trained weights
+                 agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
+                 print("✅ Successfully loaded weights into Q-Network and Target Network.")
+            else:
+                 print("⚠️  Warning: BC checkpoint found but 'q_network_state_dict' key is missing.")
+    
     # Create logger
     algorithm = config.get('algorithm', 'dqn')
     logger = Logger(
@@ -311,6 +485,11 @@ def train(config: dict, render: bool = False):
     elif algorithm == 'ppo':
         from trainers.train_ppo import train_ppo
         env = train_ppo(config, env, agent, logger, render)
+    elif algorithm == 'bc':
+        # Behavioral Cloning uses the DQN network architecture as its policy
+        # NOTE: Environment is NOT used during BC training epochs, only for init.
+        # But we pass it along for consistent cleanup.
+        env = train_bc(config, env, agent, logger)
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn' or 'ppo'.")
 
@@ -328,7 +507,9 @@ def main():
     args = parser.parse_args()
 
     # Load config
-    config = load_config(args.config)
+    default_config_path = os.path.join(os.path.dirname(__file__), "config", "config.yaml")
+    #config = load_config(args.config)
+    config = load_config(args.config if args.config else default_config_path)
 
     print("=" * 60)
     print("MineRL Tree-Chopping RL Training")

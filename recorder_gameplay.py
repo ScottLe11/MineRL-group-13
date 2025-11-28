@@ -2,6 +2,8 @@ import time, pygame, gym
 import main
 from gym.envs.registration import register
 from wrappers import StackAndProcessWrapper
+from wrappers import RewardWrapper
+from wrappers import ObservationWrapper
 from wrappers import TrajectoryRecorder
 from pathlib import Path
 
@@ -46,9 +48,12 @@ if __name__ == "__main__":
     # Environment Setup
     LOG_DIR_NAME = "expert_trajectory"
     Path(LOG_DIR_NAME).mkdir(parents=True, exist_ok=True)
-     
+    MAX_STEPS = 125
     base_env = gym.make('MineRLcustom_treechop-v0')
-    env = StackAndProcessWrapper(base_env)
+    #env = StackAndProcessWrapper(base_env)
+    env = RewardWrapper(base_env)
+    env = StackAndProcessWrapper(env)
+    env = ObservationWrapper(env, max_episode_steps=MAX_STEPS)
     env = TrajectoryRecorder(env, log_dir=LOG_DIR_NAME)  
     env.reset()
 

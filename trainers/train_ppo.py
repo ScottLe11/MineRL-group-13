@@ -27,7 +27,7 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
     Returns:
         env: Updated environment (may be recreated)
     """
-    from train import safe_env_reset, save_checkpoint, log_episode_stats
+    from trainers.helpers import safe_env_reset, save_checkpoint, log_episode_stats
 
     # Training parameters
     num_episodes = config['training']['num_episodes']
@@ -94,11 +94,8 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
 
             # PPO-SPECIFIC: Update when rollout buffer is full
             if len(agent.buffer.observations) >= n_steps:
-                # Compute last value for GAE
-                _, _, last_value = agent.select_action(obs)
-
-                # Update policy
-                update_metrics = agent.update(last_value)
+                # Update policy (agent.update() will compute last_value from obs)
+                update_metrics = agent.update(obs)
 
                 # Log update metrics
                 if update_metrics:

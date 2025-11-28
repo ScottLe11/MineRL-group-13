@@ -27,7 +27,7 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
     Returns:
         env: Updated environment (may be recreated)
     """
-    from train import safe_env_reset, save_checkpoint, log_episode_stats
+    from trainers.helpers import safe_env_reset, save_checkpoint, log_episode_stats
 
     # Training parameters
     num_episodes = config['training']['num_episodes']

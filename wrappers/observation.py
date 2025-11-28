@@ -37,7 +37,7 @@ class ObservationWrapper(gym.Wrapper):
         # Keep existing spaces and add new scalar spaces
         self.observation_space = gym.spaces.Dict({
             'pov': env.observation_space.spaces.get('pov', env.observation_space),
-            'time_left': gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+            'time': gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
             'yaw': gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
             'pitch': gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
         })
@@ -58,17 +58,17 @@ class ObservationWrapper(gym.Wrapper):
 
     def _add_scalars(self, obs: dict) -> dict:
         """
-        Add time_left, yaw, and pitch scalars to observation dict.
+        Add time, yaw, and pitch scalars to observation dict.
 
         Args:
             obs: Original observation dict with 'pov' key.
 
         Returns:
-            Extended observation dict with 'pov', 'time_left', 'yaw', 'pitch'.
+            Extended observation dict with 'pov', 'time', 'yaw', 'pitch'.
         """
         # Normalized episode time remaining: 1.0 at episode start, 0.0 at max_episode_steps
-        time_left = max(0.0, (self.max_episode_steps - self.current_episode_step) / self.max_episode_steps)
-        
+        time_normalized = max(0.0, (self.max_episode_steps - self.current_episode_step) / self.max_episode_steps)
+
         # Normalize yaw to [-1, 1] (from -180 to 180)
         normalized_yaw = self.yaw / 180.0
 
@@ -78,7 +78,7 @@ class ObservationWrapper(gym.Wrapper):
         # Build extended observation
         extended_obs = {
             'pov': obs['pov'] if isinstance(obs, dict) else obs,
-            'time_left': np.array([time_left], dtype=np.float32),
+            'time': np.array([time_normalized], dtype=np.float32),
             'yaw': np.array([normalized_yaw], dtype=np.float32),
             'pitch': np.array([normalized_pitch], dtype=np.float32),
         }

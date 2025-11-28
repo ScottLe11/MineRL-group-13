@@ -291,11 +291,12 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
         'time': torch.tensor(data['obs_time'], dtype=torch.float32),
         'yaw': torch.tensor(data['obs_yaw'], dtype=torch.float32),
         'pitch': torch.tensor(data['obs_pitch'], dtype=torch.float32),
+        'place_table_safe': torch.tensor(data['obs_place_table_safe'], dtype=torch.float32),
         'actions': torch.tensor(data['actions'], dtype=torch.long)
     }
-    
+
     # Ensure scalar tensors have correct shape (N, 1)
-    for k in ['time', 'yaw', 'pitch']:
+    for k in ['time', 'yaw', 'pitch', 'place_table_safe']:
         if tensors[k].dim() == 1:
             tensors[k] = tensors[k].unsqueeze(1)
 
@@ -323,10 +324,11 @@ def train_bc(config: dict, env, agent, logger):
     
     # 2. Setup DataLoader
     dataset = TensorDataset(
-        expert_tensors['pov'].to(device), 
+        expert_tensors['pov'].to(device),
         expert_tensors['time'].to(device),
         expert_tensors['yaw'].to(device),
         expert_tensors['pitch'].to(device),
+        expert_tensors['place_table_safe'].to(device),
         expert_tensors['actions'].to(device)
     )
     dataloader = DataLoader(
@@ -350,13 +352,14 @@ def train_bc(config: dict, env, agent, logger):
         total_epoch_loss = 0
         num_batches = 0
         
-        for pov_batch, time_batch, yaw_batch, pitch_batch, action_batch in dataloader:
+        for pov_batch, time_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
             # Construct observation dictionary for the DQN network
             obs_batch = {
                 'pov': pov_batch,
                 'time': time_batch,
                 'yaw': yaw_batch,
-                'pitch': pitch_batch
+                'pitch': pitch_batch,
+                'place_table_safe': place_table_safe_batch
             }
             
             # Forward pass: get Q-values (logits)

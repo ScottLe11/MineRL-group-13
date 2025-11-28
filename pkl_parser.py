@@ -146,13 +146,14 @@ def extract_bc_data(raw_transitions, config: dict):
     obs_time_list = []
     obs_yaw_list = []
     obs_pitch_list = []
-    
+    obs_place_table_safe_list = []
+
     action_list = []
     reward_list = []
     done_list = []
-    
-    # These are the four keys required by the DQN network
-    REQUIRED_OBS_KEYS = ['pov', 'time_left', 'yaw', 'pitch']
+
+    # These are the five keys required by the DQN network
+    REQUIRED_OBS_KEYS = ['pov', 'time_left', 'yaw', 'pitch', 'place_table_safe']
     
     for i, transition in enumerate(raw_transitions):
         try:
@@ -173,6 +174,7 @@ def extract_bc_data(raw_transitions, config: dict):
             obs_time_list.append(float(state_dict['time_left'][0]))
             obs_yaw_list.append(float(state_dict['yaw'][0]))
             obs_pitch_list.append(float(state_dict['pitch'][0]))
+            obs_place_table_safe_list.append(float(state_dict['place_table_safe'][0]))
 
             # 4. Extract Action/Reward/Done
             raw_action = transition['action']
@@ -214,6 +216,7 @@ def extract_bc_data(raw_transitions, config: dict):
         'obs_time': np.array(obs_time_list, dtype=np.float32),
         'obs_yaw': np.array(obs_yaw_list, dtype=np.float32),
         'obs_pitch': np.array(obs_pitch_list, dtype=np.float32),
+        'obs_place_table_safe': np.array(obs_place_table_safe_list, dtype=np.float32),
         'actions': actions,
         'rewards': rewards,
         'dones': dones

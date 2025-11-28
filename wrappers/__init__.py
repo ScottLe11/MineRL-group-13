@@ -10,6 +10,7 @@ from .recorder import TrajectoryRecorder
 from .hold_attack import HoldAttackWrapper
 from .observation import ObservationWrapper
 from .reward import RewardWrapper
+from .frameskip import FrameSkipWrapper
 
 __all__ = [
     "StackAndProcessWrapper",
@@ -20,6 +21,7 @@ __all__ = [
     "HoldAttackWrapper",
     "ObservationWrapper",
     "RewardWrapper",
+    "FrameSkipWrapper",
     "get_action_name",
     "get_action_space_info",
 ]

@@ -71,6 +71,34 @@ def train(config: dict, render: bool = False):
     # Create agent
     agent = create_agent(config, num_actions=env.action_space.n)
 
+    algorithm = config.get('algorithm', 'dqn')
+    device = config['device'] # Use the device variable defined at the top
+
+    # Only load BC checkpoint if running DQN
+    if algorithm == 'dqn':
+        checkpoint_dir = config['training']['checkpoint_dir']
+        bc_checkpoint_path = os.path.join(checkpoint_dir, "final_model_bc.pt")
+        
+        if os.path.exists(bc_checkpoint_path):
+            print(f"\n🧠 Loading BC pre-trained weights: {bc_checkpoint_path}")
+            
+            # Load checkpoint data
+            checkpoint = torch.load(bc_checkpoint_path, map_location=device)
+            
+            # Load Q-Network weights from BC checkpoint
+            if 'q_network_state_dict' in checkpoint:
+                 # Load weights into the online Q-Network
+                 agent.q_network.load_state_dict(checkpoint['q_network_state_dict'])
+                 
+                 # Initialize target network with pre-trained weights too
+                 agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
+                 
+                 print("✅ Successfully loaded weights into Q-Network and Target Network.")
+            else:
+                 print("⚠️  Warning: BC checkpoint found but 'q_network_state_dict' key is missing.")
+        else:
+             print("⚠️  Warning: BC checkpoint not found. Starting DQN from scratch.")
+    
     # Create logger
     algorithm = config.get('algorithm', 'dqn')
     logger = Logger(
@@ -88,6 +116,10 @@ def train(config: dict, render: bool = False):
     elif algorithm == 'ppo':
         from trainers.train_ppo import train_ppo
         env = train_ppo(config, env, agent, logger, render)
+    elif algorithm == 'bc': 
+        from trainers.helpers import train_bc
+        # BC does not require 'render'
+        env = train_bc(config, env, agent, logger)
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn' or 'ppo'.")
 

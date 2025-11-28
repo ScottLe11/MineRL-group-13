@@ -11,6 +11,7 @@ New reward system:
 
 import gym
 import numpy as np
+from crafting.crafting_utils import LOG_ITEM_KEYS
 
 
 class RewardWrapper(gym.Wrapper):
@@ -56,10 +57,12 @@ class RewardWrapper(gym.Wrapper):
             if isinstance(obs, dict) and 'inventory' in obs:
                 inv = obs['inventory']
                 if isinstance(inv, dict):
-                    # Try different log types
-                    return int(inv.get('log', inv.get('oak_log', 0)))
-                elif hasattr(inv, 'get'):
-                    return int(inv.get('log', inv.get('oak_log', 0)))
+                    # [MODIFIED LOGIC] Sum all known log types
+                    return sum(int(inv.get(key, 0)) for key in LOG_ITEM_KEYS)
+                
+                # Handle case where inventory might be a flat array or other format
+                # (Fallback logic if needed, but dict check above covers standard MineRL)
+                return 0
             return 0
         except (KeyError, TypeError, AttributeError):
             return 0

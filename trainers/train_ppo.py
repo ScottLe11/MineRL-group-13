@@ -74,8 +74,19 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
             # Take step
             next_obs, reward, done, info = env.step(action)
 
+            # Handle MineRL socket timeout errors
+            if 'error' in info:
+                print(f"⚠️  MineRL step error in episode {episode}: {info.get('error', 'unknown')}")
+                print(f"   Terminating episode early (step {step_in_episode})")
+                done = True  # Force episode termination
+                # Don't store this transition - it's corrupted
+
             if render:
                 env.render()
+
+            if done and 'error' in info:
+                # Skip storing corrupted transition, just break
+                break
 
             # PPO-SPECIFIC: Store transition in rollout buffer
             agent.store_transition(obs, action, log_prob, reward, value, done)

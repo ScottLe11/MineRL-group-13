@@ -17,6 +17,9 @@ from wrappers.hold_attack import HoldAttackWrapper
 from wrappers.actions import ConfigurableActionWrapper
 from wrappers.reward import RewardWrapper
 
+# Constants
+AGENT_STEPS_PER_SECOND = 5  # Each agent step = 4 frames at 20 ticks/sec = 0.2s
+
 
 def parse_action_space_config(action_config: dict) -> list:
     """
@@ -113,9 +116,9 @@ def create_env(config: dict):
           f"with_axe={curriculum.get('with_axe', False)}, "
           f"spawn_type={curriculum.get('spawn_type', 'random')}")
 
-    # Calculate max steps per episode (episode_seconds * 5 because 1 step = 4 frames = 200ms)
+    # Calculate max steps per episode
     episode_seconds = env_config.get('episode_seconds', 20)
-    max_steps_per_episode = episode_seconds * 5
+    max_steps_per_episode = episode_seconds * AGENT_STEPS_PER_SECOND
 
     # Parse action space configuration
     enabled_actions = parse_action_space_config(action_config)

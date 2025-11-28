@@ -41,7 +41,7 @@ class ActorCriticNetwork(nn.Module):
         Args:
             num_actions: Number of discrete actions
             input_channels: Number of stacked frames (default 4)
-            num_scalars: Number of scalar observations (time, yaw, pitch)
+            num_scalars: Number of scalar observations (time_left, yaw, pitch)
             hidden_size: Size of hidden layers
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
@@ -122,7 +122,7 @@ class ActorCriticNetwork(nn.Module):
         Forward pass returning policy logits and value.
 
         Args:
-            obs: Dict with 'pov', 'time', 'yaw', 'pitch' tensors
+            obs: Dict with 'pov', 'time_left', 'yaw', 'pitch' tensors
 
         Returns:
             (action_logits, value): Tuple of policy logits and state value
@@ -149,7 +149,7 @@ class ActorCriticNetwork(nn.Module):
 
         # Concatenate scalar features
         scalars = torch.stack([
-            obs['time'].view(-1),
+            obs['time_left'].view(-1),
             obs['yaw'].view(-1),
             obs['pitch'].view(-1)
         ], dim=1)  # (batch, num_scalars)
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # Test forward pass
     obs = {
         'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
-        'time': torch.tensor([0.8, 0.5]),
+        'time_left': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([0.0, 0.5]),
         'pitch': torch.tensor([0.0, -0.2]),
     }

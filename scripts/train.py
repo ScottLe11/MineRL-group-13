@@ -1,29 +1,126 @@
 #!/usr/bin/env python3
 """
-DEPRECATED: This file is a legacy wrapper.
+Unified training script for MineRL Tree-Chopping RL Agents.
 
-Use the unified training script instead:
-    python train.py [options]
+This script provides COMMON INFRASTRUCTURE for all algorithms:
+- Environment setup and recreation
+- Safe environment reset with retry logic
+- Checkpoint saving (algorithm-agnostic)
+- Episode statistics logging
+- TensorBoard integration
 
-This wrapper exists only for backwards compatibility.
-It simply forwards all arguments to the root train.py.
+Algorithm-specific training loops are in:
+- trainers/train_dqn.py (DQN-specific logic)
+- trainers/train_ppo.py (PPO-specific logic)
+
+Usage:
+    python train.py                    # Use default config
+    python train.py --config path.yaml # Use custom config
+    python train.py --render           # Show Minecraft window during training
 """
 
-import sys
+import argparse
 import os
+import sys
+import random
+import numpy as np
+import time
+import socket
 
 # Add project root to path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import and run the unified trainer
+import torch
+
+# Project imports
+from utils.config import load_config
+from utils.logger import Logger
+from utils.env_factory import create_env
+from utils.agent_factory import create_agent
+from trainers.helpers import print_config_summary
+
+
+def set_seed(seed: int):
+    """Set random seeds for reproducibility."""
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+
+def train(config: dict, render: bool = False):
+    """
+    Main training entry point - provides common infrastructure and routes to algorithm.
+
+    Args:
+        config: Configuration dictionary
+        render: If True, render the Minecraft window during training
+    """
+    # Setup
+    set_seed(config.get('seed'))
+    device = config['device']
+    print(f"Training on device: {device}")
+
+    # Create environment
+    env = create_env(config)
+    print(f"Environment created: {config['environment']['name']}")
+    print(f"Action space: {env.action_space}")
+
+    # Create agent
+    agent = create_agent(config, num_actions=env.action_space.n)
+
+    # Create logger
+    algorithm = config.get('algorithm', 'dqn')
+    logger = Logger(
+        log_dir=config['training']['log_dir'],
+        experiment_name=f"treechop_{algorithm}_{config.get('seed', 'noseed')}"
+    )
+
+    # Print configuration summary
+    print_config_summary(config, agent, config['environment'])
+
+    # Route to algorithm-specific training loop
+    if algorithm == 'dqn':
+        from trainers.train_dqn import train_dqn
+        env = train_dqn(config, env, agent, logger, render)
+    elif algorithm == 'ppo':
+        from trainers.train_ppo import train_ppo
+        env = train_ppo(config, env, agent, logger, render)
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn' or 'ppo'.")
+
+    # Cleanup
+    logger.close()
+    env.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train MineRL Tree-Chopping RL Agent")
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to config file (default: config/config.yaml)')
+    parser.add_argument('--render', action='store_true',
+                        help='Render the Minecraft window during training')
+    args = parser.parse_args()
+
+    # Load config
+    config = load_config(args.config)
+
+    print("=" * 60)
+    print("MineRL Tree-Chopping RL Training")
+    print("=" * 60)
+    print(f"Config: {args.config or 'config/config.yaml'}")
+    print(f"Algorithm: {config.get('algorithm', 'dqn').upper()}")
+    print(f"Device: {config['device']}")
+    print(f"Episodes: {config['training']['num_episodes']}")
+    print(f"Episode length: {config['environment']['episode_seconds']}s")
+    print(f"Render: {args.render}")
+    print("=" * 60)
+
+    # Train
+    train(config, render=args.render)
+
+
 if __name__ == "__main__":
-    print("=" * 60)
-    print("WARNING: Using legacy scripts/train.py wrapper")
-    print("Please use 'python train.py' instead (root directory)")
-    print("=" * 60)
-    print()
-
-    # Import main from root train.py
-    from train import main
     main()

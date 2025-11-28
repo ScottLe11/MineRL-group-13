@@ -27,7 +27,7 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
     Returns:
         env: Updated environment (may be recreated)
     """
-    from train import safe_env_reset, save_checkpoint, log_episode_stats
+    from trainers.helpers import safe_env_reset, save_checkpoint, log_episode_stats
 
     # Training parameters
     num_episodes = config['training']['num_episodes']
@@ -70,8 +70,19 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
             # Take step
             next_obs, reward, done, info = env.step(action)
 
+            # Handle MineRL socket timeout errors
+            if 'error' in info:
+                print(f"⚠️  MineRL step error in episode {episode}: {info.get('error', 'unknown')}")
+                print(f"   Terminating episode early (step {step_in_episode})")
+                done = True  # Force episode termination
+                # Don't store this experience - it's corrupted
+
             if render:
                 env.render()
+
+            if done and 'error' in info:
+                # Skip storing corrupted experience, just break
+                break
 
             # DQN-SPECIFIC: Store experience in replay buffer
             state = {

@@ -27,7 +27,7 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
     Returns:
         env: Updated environment (may be recreated)
     """
-    from train import safe_env_reset, save_checkpoint, log_episode_stats
+    from trainers.helpers import safe_env_reset, save_checkpoint, log_episode_stats
 
     # Training parameters
     num_episodes = config['training']['num_episodes']
@@ -74,8 +74,19 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
             # Take step
             next_obs, reward, done, info = env.step(action)
 
+            # Handle MineRL socket timeout errors
+            if 'error' in info:
+                print(f"⚠️  MineRL step error in episode {episode}: {info.get('error', 'unknown')}")
+                print(f"   Terminating episode early (step {step_in_episode})")
+                done = True  # Force episode termination
+                # Don't store this transition - it's corrupted
+
             if render:
                 env.render()
+
+            if done and 'error' in info:
+                # Skip storing corrupted transition, just break
+                break
 
             # PPO-SPECIFIC: Store transition in rollout buffer
             agent.store_transition(obs, action, log_prob, reward, value, done)
@@ -94,11 +105,8 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
 
             # PPO-SPECIFIC: Update when rollout buffer is full
             if len(agent.buffer.observations) >= n_steps:
-                # Compute last value for GAE
-                _, _, last_value = agent.select_action(obs)
-
-                # Update policy
-                update_metrics = agent.update(last_value)
+                # Update policy (agent.update() will compute last_value from obs)
+                update_metrics = agent.update(obs)
 
                 # Log update metrics
                 if update_metrics:

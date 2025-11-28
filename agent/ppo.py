@@ -111,7 +111,7 @@ class RolloutBuffer:
             # Batch observations
             batch_obs = {
                 'pov': np.stack([self.observations[i]['pov'] for i in batch_indices]),
-                'time': np.array([self.observations[i]['time'] for i in batch_indices]),
+                'time_left': np.array([self.observations[i]['time_left'] for i in batch_indices]),
                 'yaw': np.array([self.observations[i]['yaw'] for i in batch_indices]),
                 'pitch': np.array([self.observations[i]['pitch'] for i in batch_indices]),
             }
@@ -349,7 +349,7 @@ class PPOAgent:
         # Use numpy arrays to avoid "extremely slow" warning
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time': torch.tensor(np.array([state.get('time', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'time_left': torch.tensor(np.array([state.get('time_left', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
             'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
             'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
         }
@@ -358,7 +358,7 @@ class PPOAgent:
         """Convert batch dict to tensor dict."""
         return {
             'pov': torch.tensor(obs['pov'], dtype=torch.float32, device=self.device),
-            'time': torch.tensor(obs['time'], dtype=torch.float32, device=self.device),
+            'time_left': torch.tensor(obs['time_left'], dtype=torch.float32, device=self.device),
             'yaw': torch.tensor(obs['yaw'], dtype=torch.float32, device=self.device),
             'pitch': torch.tensor(obs['pitch'], dtype=torch.float32, device=self.device),
         }
@@ -403,21 +403,21 @@ if __name__ == "__main__":
     print("\n  Collecting rollout...")
     state = {
         'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
-        'time': 1.0,
+        'time_left': 1.0,
         'yaw': 0.0,
         'pitch': 0.0
     }
-    
+
     for i in range(64):
         action, log_prob, value = agent.select_action(state)
         reward = -0.001
         done = (i == 63)
-        
+
         agent.store_transition(state, action, log_prob, reward, value, done)
-        
+
         state = {
             'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
-            'time': 1.0 - i / 64,
+            'time_left': 1.0 - i / 64,
             'yaw': 0.0,
             'pitch': 0.0
         }

@@ -23,7 +23,18 @@ class TrajectoryRecorder(Wrapper):
         self.trajectory = []
         self.start_time = time.time()
         
-        obs, info = self.env.reset(**kwargs)
+        out = self.env.reset(**kwargs)
+
+        # Handle 1, 2, or more-than-2 return values 
+        if isinstance(out, tuple):
+            if len(out) == 1:
+                obs, info = out[0], {}
+            else:
+                # Take the first two as (obs, info), ignore any extras
+                obs, info = out[0], out[1]
+        else:
+            obs, info = out, {}
+
         self.current_obs = obs # Store initial observation
         return obs, info
 

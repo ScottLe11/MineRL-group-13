@@ -22,10 +22,9 @@ from crafting import (
     craft_pipeline_make_and_equip_axe,
     craft_planks_from_logs,
     craft_table_in_inventory,
-    place_and_open_table,
-    craft_sticks_in_table,
+    craft_sticks_in_inventory,   
     craft_wooden_axe,
-    GuiClicker,
+    GuiClicker
 )
 
 
@@ -81,7 +80,7 @@ MACRO_CRAFT_STICKS = 21
 MACRO_CRAFT_AXE = 22
 
 # Extended action indices (can be added to action pool)
-MACRO_CRAFT_ENTIRE_AXE = 23  # Full pipeline: planks -> table -> sticks -> axe
+MACRO_CRAFT_ENTIRE_AXE = 23  # Full pipeline: planks + sticks in inventory -> table -> axe
 ACTION_ATTACK_5 = 24         # Attack for 5 steps (20 frames)
 ACTION_ATTACK_10 = 25        # Attack for 10 steps (40 frames)
 
@@ -123,12 +122,12 @@ class ExtendedActionWrapper(ActionWrapper):
         self.logs_to_convert = logs_to_convert
         self.gui_size = gui_size
         
-        # Persistent hotbar mapping for crafting macros
-        self.hotbar_map = {}
-        
         # Track camera rotation for ObservationWrapper
         self.yaw_delta_accumulated = 0.0
         self.pitch_delta_accumulated = 0.0
+
+        # Track the last observation so macros can inspect inventory
+        self._last_obs = None
         
         self.action_space = Discrete(NUM_ACTIONS)
     
@@ -188,6 +187,7 @@ class ExtendedActionWrapper(ActionWrapper):
             if done:
                 break
         
+        self._last_obs = obs
         info['action_name'] = ACTION_NAMES[action_index]
         return obs, total_reward, done, info
     
@@ -215,6 +215,7 @@ class ExtendedActionWrapper(ActionWrapper):
         # Update ObservationWrapper if present
         self._update_observation_wrapper()
         
+        self._last_obs = obs
         action_index = len(PRIMITIVE_ACTIONS) + camera_idx
         info['action_name'] = ACTION_NAMES[action_index]
         info['yaw_delta'] = self.yaw_delta_accumulated
@@ -245,12 +246,24 @@ class ExtendedActionWrapper(ActionWrapper):
             if done:
                 break
 
+        self._last_obs = obs
         action_name = f'attack_{num_steps}'
         info['action_name'] = action_name
         info['attack_steps'] = num_steps
-        info['attack_frames'] = total_frames
+        info['attack_frames'] = total_frames 
         info['macro_steps'] = total_frames  # Report frames for training loop step counting
         return obs, total_reward, done, info
+
+    # -------------------------------------------------------------------------
+    # MACROS
+    # -------------------------------------------------------------------------
+
+    def _get_obs_for_macro(self):
+        """
+        Get the observation to use for inventory checks in crafting macros.
+        Usually just the last obs returned to the agent.
+        """
+        return self._last_obs
 
     def _execute_macro(self, action_index: int):
         """Execute a crafting macro action."""
@@ -272,7 +285,9 @@ class ExtendedActionWrapper(ActionWrapper):
                 return self._macro_craft_entire_axe()
             else:
                 # Fallback: no-op
-                return self.env.step(self.env.action_space.no_op())
+                obs, reward, done, info = self.env.step(self.env.action_space.no_op())
+                self._last_obs = obs
+                return obs, reward, done, info
         finally:
             if suppressor is not None:
                 suppressor.set_hold_suppressed(False)
@@ -280,94 +295,100 @@ class ExtendedActionWrapper(ActionWrapper):
     def _macro_craft_planks(self):
         """Craft planks from logs using 2x2 inventory grid."""
         tracer = _RewardTracer(self.env)
-        helper = GuiClicker(tracer)
-        
-        craft_planks_from_logs(
+        helper = GuiClicker(tracer, width=self.gui_size[0], height=self.gui_size[1])
+
+        obs_for_check = self._get_obs_for_macro()
+        ok = craft_planks_from_logs(
             tracer, helper,
             logs_to_convert=self.logs_to_convert,
             width=self.gui_size[0], height=self.gui_size[1],
-            hotbar_map=self.hotbar_map
+            obs=obs_for_check,
         )
         
-        return self._finalize_macro(tracer, 'craft_planks')
+        return self._finalize_macro(tracer, 'craft_planks', aborted=not ok)
     
     def _macro_make_table(self):
         """
         Make and place crafting table.
-        Combines craft_table_in_inventory() + place_and_open_table().
+        Combines craft_table_in_inventory() and places the table
         """
         tracer = _RewardTracer(self.env)
-        helper = GuiClicker(tracer)
+        helper = GuiClicker(tracer, width=self.gui_size[0], height=self.gui_size[1])
+
+        obs_for_check = self._get_obs_for_macro()
         
-        # Craft the table in inventory
-        craft_table_in_inventory(
+        # Craft the table in inventory (may abort if not enough planks)
+        ok = craft_table_in_inventory(
             tracer, helper,
             width=self.gui_size[0], height=self.gui_size[1],
-            hotbar_map=self.hotbar_map
+            obs=obs_for_check,
         )
         
-        # Place and open the table
-        place_and_open_table(
-            tracer, helper,
-            hotbar_map=self.hotbar_map
-        )
-        
-        return self._finalize_macro(tracer, 'make_table')
+        return self._finalize_macro(tracer, 'make_table', aborted=not ok)
     
     def _macro_craft_sticks(self):
-        """Craft sticks in the 3x3 crafting table."""
+        """Craft sticks using the 2x2 inventory crafting grid."""
         tracer = _RewardTracer(self.env)
-        helper = GuiClicker(tracer)
+        helper = GuiClicker(tracer, width=self.gui_size[0], height=self.gui_size[1])
+
+        obs_for_check = self._get_obs_for_macro()
         
-        craft_sticks_in_table(
+        ok = craft_sticks_in_inventory(
             tracer, helper,
             width=self.gui_size[0], height=self.gui_size[1],
-            hotbar_map=self.hotbar_map
+            obs=obs_for_check,
         )
         
-        return self._finalize_macro(tracer, 'craft_sticks')
+        return self._finalize_macro(tracer, 'craft_sticks', aborted=not ok)
     
     def _macro_craft_axe(self):
         """Craft wooden axe in the 3x3 crafting table."""
         tracer = _RewardTracer(self.env)
-        helper = GuiClicker(tracer)
+        helper = GuiClicker(tracer, width=self.gui_size[0], height=self.gui_size[1])
 
-        craft_wooden_axe(
+        obs_for_check = self._get_obs_for_macro()
+
+        ok = craft_wooden_axe(
             tracer, helper,
             width=self.gui_size[0], height=self.gui_size[1],
-            hotbar_map=self.hotbar_map
+            obs=obs_for_check,
         )
 
-        return self._finalize_macro(tracer, 'craft_axe')
+        return self._finalize_macro(tracer, 'craft_axe', aborted=not ok)
 
     def _macro_craft_entire_axe(self):
         """
         Craft entire axe from scratch.
-        Full pipeline: planks -> table -> sticks -> axe.
+        Full pipeline: planks -> sticks -> table -> axe.
         """
         tracer = _RewardTracer(self.env)
-        helper = GuiClicker(tracer)
+        helper = GuiClicker(tracer, width=self.gui_size[0], height=self.gui_size[1])
 
-        craft_pipeline_make_and_equip_axe(
+        obs_for_check = self._get_obs_for_macro()
+
+        ok = craft_pipeline_make_and_equip_axe(
             tracer, helper,
             logs_to_convert=self.logs_to_convert,
             width=self.gui_size[0], height=self.gui_size[1],
-            hotbar_map=self.hotbar_map
+            obs=obs_for_check,
         )
 
-        return self._finalize_macro(tracer, 'craft_entire_axe')
+        return self._finalize_macro(tracer, 'craft_entire_axe', aborted=not ok)
     
-    def _finalize_macro(self, tracer, macro_name: str):
+    def _finalize_macro(self, tracer, macro_name: str, aborted: bool):
         """Finalize macro execution and return results."""
         if tracer.last is None:
             tracer.step(self.env.action_space.no_op())
         
         obs, _, done, info = tracer.last
+        self._last_obs = obs
+
         info = dict(info or {})
         info['action_name'] = macro_name
         info['macro'] = macro_name
         info['macro_steps'] = tracer.steps
         info['macro_reward'] = tracer.total_reward
+        info['macro_aborted'] = aborted
         
         return obs, tracer.total_reward, done, info
     
@@ -393,11 +414,12 @@ class ExtendedActionWrapper(ActionWrapper):
             cur = cur.env
     
     def reset(self):
-        """Reset environment and clear hotbar mapping."""
-        self.hotbar_map = {}
+        """Reset environment and clear mappings."""
         self.yaw_delta_accumulated = 0.0
         self.pitch_delta_accumulated = 0.0
-        return self.env.reset()
+        obs = self.env.reset()
+        self._last_obs = obs
+        return obs
 
 
 class _RewardTracer(gym.Wrapper):
@@ -433,7 +455,7 @@ class ConfigurableActionWrapper(ExtendedActionWrapper):
     - 0-6: Movement primitives (noop, forward, back, right, left, jump, attack)
     - 7-18: Camera primitives (turn left/right, look up/down at various angles)
     - 19-22: Basic crafting macros (planks, make_table, sticks, axe)
-    - 23: craft_entire_axe (full pipeline: planks -> table -> sticks -> axe)
+    - 23: craft_entire_axe (full pipeline: planks -> sticks -> table -> axe)
     - 24: attack_5 (attack for 5 steps = 20 frames)
     - 25: attack_10 (attack for 10 steps = 40 frames)
 
@@ -584,5 +606,5 @@ if __name__ == "__main__":
     
     info = get_action_space_info()
     print(f"\n  Primitive actions: {info['primitives']}")
-    print(f"  Camera actions: {info['camera']}")
+    print(f"  Camera actions: {info['camera_primitives']}")
     print(f"  Macro actions: {info['macros']}")

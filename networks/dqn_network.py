@@ -22,7 +22,7 @@ class DQNNetwork(nn.Module):
     Observation format expected:
         {
             'pov': (batch, 4, 84, 84) uint8 or float,
-            'time': (batch,) or (batch, 1) float,
+            'time_left': (batch,) or (batch, 1) float,
             'yaw': (batch,) or (batch, 1) float,
             'pitch': (batch,) or (batch, 1) float
         }
@@ -40,7 +40,7 @@ class DQNNetwork(nn.Module):
         Args:
             num_actions: Number of discrete actions (default: 23)
             input_channels: Number of stacked frames (default: 4)
-            num_scalars: Number of scalar observations (default: 3 for time, yaw, pitch)
+            num_scalars: Number of scalar observations (default: 3 for time_left, yaw, pitch)
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
         """
@@ -102,7 +102,7 @@ class DQNNetwork(nn.Module):
         Forward pass through the network.
 
         Args:
-            obs: Dictionary with keys 'pov', 'time', 'yaw', 'pitch'
+            obs: Dictionary with keys 'pov', 'time_left', 'yaw', 'pitch'
                  OR a tensor for pov only (for simple testing)
 
         Returns:
@@ -120,19 +120,19 @@ class DQNNetwork(nn.Module):
             device = pov.device
 
             # Handle scalar dimensions
-            time = obs.get('time', torch.zeros(batch_size, device=device))
+            time_left = obs.get('time_left', torch.zeros(batch_size, device=device))
             yaw = obs.get('yaw', torch.zeros(batch_size, device=device))
             pitch = obs.get('pitch', torch.zeros(batch_size, device=device))
 
             # Ensure scalars are (batch, 1)
-            if time.dim() == 1:
-                time = time.unsqueeze(1)
+            if time_left.dim() == 1:
+                time_left = time_left.unsqueeze(1)
             if yaw.dim() == 1:
                 yaw = yaw.unsqueeze(1)
             if pitch.dim() == 1:
                 pitch = pitch.unsqueeze(1)
 
-            scalars = torch.cat([time, yaw, pitch], dim=1)  # (batch, 3)
+            scalars = torch.cat([time_left, yaw, pitch], dim=1)  # (batch, 3)
 
         # Extract visual features
         # If using attention, apply it to conv features before FC layer
@@ -204,7 +204,7 @@ if __name__ == "__main__":
     print("\n  Testing with dict observation...")
     obs = {
         'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.float32),
-        'time': torch.tensor([0.8, 0.5]),
+        'time_left': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([45.0, -30.0]),
         'pitch': torch.tensor([0.0, 10.0])
     }
@@ -225,7 +225,7 @@ if __name__ == "__main__":
     print("\n  Testing action selection...")
     single_obs = {
         'pov': torch.randint(0, 256, (4, 84, 84), dtype=torch.float32),
-        'time': torch.tensor(0.5),
+        'time_left': torch.tensor(0.5),
         'yaw': torch.tensor(0.0),
         'pitch': torch.tensor(0.0)
     }

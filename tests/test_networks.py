@@ -100,30 +100,30 @@ class TestDQNNetwork:
     def test_forward_pass(self):
         """Full network should process observation dict correctly."""
         network = DQNNetwork(input_channels=4, num_actions=23)
-        
+
         obs = {
             'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
-            'time': torch.tensor([0.8, 0.5], dtype=torch.float32),
+            'time_left': torch.tensor([0.8, 0.5], dtype=torch.float32),
             'yaw': torch.tensor([0.0, 45.0], dtype=torch.float32),
             'pitch': torch.tensor([0.0, -10.0], dtype=torch.float32),
         }
-        
+
         q_values = network(obs)
-        
+
         assert q_values.shape == (2, 23), f"Expected (2, 23), got {q_values.shape}"
     
     def test_pov_normalization(self):
         """POV should be normalized to [0, 1] internally."""
         network = DQNNetwork(input_channels=4, num_actions=8)
-        
+
         # Max value POV
         obs = {
             'pov': torch.full((1, 4, 84, 84), 255, dtype=torch.uint8),
-            'time': torch.tensor([1.0]),
+            'time_left': torch.tensor([1.0]),
             'yaw': torch.tensor([0.0]),
             'pitch': torch.tensor([0.0]),
         }
-        
+
         # Should not crash or produce NaN
         q_values = network(obs)
         assert not torch.isnan(q_values).any(), "Q-values should not be NaN"
@@ -131,42 +131,42 @@ class TestDQNNetwork:
     def test_scalar_dimensions(self):
         """Network should handle both (batch,) and (batch, 1) scalar shapes."""
         network = DQNNetwork(input_channels=4, num_actions=8)
-        
+
         # Shape (batch,)
         obs1 = {
             'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
-            'time': torch.tensor([0.5, 0.3]),
+            'time_left': torch.tensor([0.5, 0.3]),
             'yaw': torch.tensor([0.0, 45.0]),
             'pitch': torch.tensor([0.0, -10.0]),
         }
         q1 = network(obs1)
-        
+
         # Shape (batch, 1)
         obs2 = {
             'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
-            'time': torch.tensor([[0.5], [0.3]]),
+            'time_left': torch.tensor([[0.5], [0.3]]),
             'yaw': torch.tensor([[0.0], [45.0]]),
             'pitch': torch.tensor([[0.0], [-10.0]]),
         }
         q2 = network(obs2)
-        
+
         assert q1.shape == q2.shape == (2, 8)
     
     def test_gradient_flow_full_network(self):
         """Gradients should flow through the entire network."""
         network = DQNNetwork(input_channels=4, num_actions=8)
-        
+
         obs = {
             'pov': torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8),
-            'time': torch.tensor([0.5, 0.3], requires_grad=True),
+            'time_left': torch.tensor([0.5, 0.3], requires_grad=True),
             'yaw': torch.tensor([0.0, 45.0], requires_grad=True),
             'pitch': torch.tensor([0.0, -10.0], requires_grad=True),
         }
-        
+
         q_values = network(obs)
         loss = q_values.sum()
         loss.backward()
-        
+
         # Check gradients exist for network parameters
         for name, param in network.named_parameters():
             assert param.grad is not None, f"No gradient for {name}"
@@ -186,7 +186,7 @@ class TestNetworkIntegration:
         # Same input should produce same output
         obs = {
             'pov': torch.randint(0, 256, (1, 4, 84, 84), dtype=torch.uint8),
-            'time': torch.tensor([0.5]),
+            'time_left': torch.tensor([0.5]),
             'yaw': torch.tensor([0.0]),
             'pitch': torch.tensor([0.0]),
         }

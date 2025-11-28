@@ -58,11 +58,24 @@ def _install_reset_hook(env):
 
         current = getattr(current, "env", None)
 
+
+def close_table_gui_if_open(env):
+    """ If the 3x3 crafting table GUI is open, close it """
+    global TABLE_GUI_OPEN
+    if not TABLE_GUI_OPEN:
+        return False
+    act = env.action_space.no_op()
+    act["inventory"] = 1
+    env.step(act)
+    TABLE_GUI_OPEN = False
+    look(env, pitch=-7.0, repeats=6)
+    return True
+
+
 def craft_planks_from_logs(env, helper, logs_to_convert=3, width=640, height=360, obs=None):
     """ Inventory 2×2: Logs -> Planks. Checks requirements if it can craft """
     global TABLE_GUI_OPEN
 
-    # If the 3x3 crafting table GUI is open, close it first.
     if TABLE_GUI_OPEN:
         helper.toggle_inventory(); tick(env, 2)
         TABLE_GUI_OPEN = False
@@ -97,11 +110,11 @@ def craft_planks_from_logs(env, helper, logs_to_convert=3, width=640, height=360
 
     return True
 
+
 def craft_sticks_in_inventory(env, helper, width=640, height=360, obs=None):
     """ Inventory 2x2: Sticks from Planks. Checks requirements if it can craft. """
     global TABLE_GUI_OPEN
 
-    # If the 3x3 crafting table GUI is open, close it first.
     if TABLE_GUI_OPEN:
         helper.toggle_inventory(); tick(env, 2)
         TABLE_GUI_OPEN = False
@@ -138,9 +151,23 @@ def craft_sticks_in_inventory(env, helper, width=640, height=360, obs=None):
 
 def craft_table_in_inventory(env, helper, width=640, height=360, obs=None):
     """ Inventory 2×2: Make Crafting Table from Planks. Checks requirements if it can craft """
+    global TABLE_GUI_OPEN
+
+    if TABLE_GUI_OPEN:
+        helper.toggle_inventory(); tick(env, 2)
+        TABLE_GUI_OPEN = False
+        look(env, pitch=-7.0, repeats=6)
+
     if obs is not None:
         if not ensure_have_items({"planks": 4}, obs):
             return False
+
+        safe_arr = obs.get("place_table_safe", None)
+        if safe_arr is not None:
+            safe_flag = float(np.array(safe_arr).reshape(()))
+            if safe_flag < 0.5:
+                print(f"[crafting_guide] Not safe to place, aborting craft_table_in_inventory.")
+                return False
 
     tl, craft2_tl, craft2_out, inv_tl, hotbar_tl = inv_gui_coords(width, height)
 
@@ -174,10 +201,10 @@ def craft_table_in_inventory(env, helper, width=640, height=360, obs=None):
     helper.right_click(); tick(env, 4)
     helper.right_click(); tick(env, 3)
 
-    global TABLE_GUI_OPEN
     TABLE_GUI_OPEN = True
 
     return True
+
 
 def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
     """ Table 3×3: Wooden Axe from Planks + Sticks. Checks requirements if it can craft """

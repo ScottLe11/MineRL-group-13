@@ -24,6 +24,7 @@ from crafting import (
     craft_table_in_inventory,
     craft_sticks_in_inventory,   
     craft_wooden_axe,
+    close_table_gui_if_open,
     GuiClicker
 )
 
@@ -158,22 +159,36 @@ class ExtendedActionWrapper(ActionWrapper):
 
         # Primitive actions (0-6)
         if action_index < len(PRIMITIVE_ACTIONS):
+            self.close_table_gui()
             return self._execute_primitive(action_index)
 
         # Camera actions (7-18)
         camera_idx = action_index - len(PRIMITIVE_ACTIONS)
         if camera_idx < len(CAMERA_ACTIONS):
+            self.close_table_gui()
             return self._execute_camera(camera_idx)
 
         # Extended attack actions (24-25)
         if action_index == ACTION_ATTACK_5:
+            self.close_table_gui()
             return self._execute_extended_attack(5)  # 5 steps
         elif action_index == ACTION_ATTACK_10:
+            self.close_table_gui()
             return self._execute_extended_attack(10)  # 10 steps
 
         # Macro actions (19-23)
         return self._execute_macro(action_index)
     
+    def close_table_gui(self):
+        """
+        If the 3x3 crafting table GUI is open (tracked by crafting_guide.TABLE_GUI_OPEN),
+        close it before executing a non-crafting action.
+        """
+        try:
+            close_table_gui_if_open(self.env)
+        except Exception:
+            pass
+
     def _execute_primitive(self, action_index: int):
         """Execute a primitive action for FRAMES_PER_ACTION frames."""
         total_reward = 0.0

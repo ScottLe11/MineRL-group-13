@@ -174,12 +174,8 @@ def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
     if obs is not None:
         if AXES_CRAFTED_THIS_EPISODE >= MAX_AXES_IN_HOTBAR:
             print("[crafting_guide] Axe cap reached (>= 5 axes in hotbar). Aborting craft_wooden_axe.")
-            helper.toggle_inventory()
-            look(env, pitch=-7.0, repeats=6)
             return False
         if not ensure_have_items({"planks": 3, "sticks": 2}, obs):
-            helper.toggle_inventory()
-            look(env, pitch=-7.0, repeats=6)
             return False
 
     tl, craft3_tl, craft3_out, inv_tl, hotbar_tl = table_gui_coords(width, height)

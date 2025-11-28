@@ -33,14 +33,28 @@ class ObservationWrapper(gym.Wrapper):
         self.yaw = 0.0    # Horizontal rotation: -180 to 180
         self.pitch = 0.0  # Vertical rotation: -90 (down) to 90 (up)
 
-        # Update observation space to include scalars
-        # Keep existing spaces and add new scalar spaces
-        self.observation_space = gym.spaces.Dict({
-            'pov': env.observation_space.spaces.get('pov', env.observation_space),
-            'time_left': gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-            'yaw': gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
-            'pitch': gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
-        })
+        # build observation_space by preserving existing keys (like inventory') and adding time_left / yaw / pitch.
+        if isinstance(env.observation_space, gym.spaces.Dict):
+            base_spaces = dict(env.observation_space.spaces)
+        else:
+            # Fallback: treat full obs space as 'pov' if it's not a Dict
+            base_spaces = {'pov': env.observation_space}
+
+        if 'pov' not in base_spaces:
+            raise KeyError("ObservationWrapper expects 'pov' key in observation_space.")
+
+        # Add scalar spaces
+        base_spaces['time_left'] = gym.spaces.Box(
+            low=0.0, high=1.0, shape=(1,), dtype=np.float32
+        )
+        base_spaces['yaw'] = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+        )
+        base_spaces['pitch'] = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+        )
+
+        self.observation_space = gym.spaces.Dict(base_spaces)
     
     def reset(self):
         """Reset environment and observation tracking."""
@@ -56,15 +70,16 @@ class ObservationWrapper(gym.Wrapper):
         self.current_episode_step += 1
         return self._add_scalars(obs), reward, done, info
 
-    def _add_scalars(self, obs: dict) -> dict:
+    def _add_scalars(self, obs) -> dict:
         """
-        Add time_left, yaw, and pitch scalars to observation dict.
+        Add time_left, yaw, and pitch scalars to observation dict, while
+        preserving other keys like 'inventory'.
 
         Args:
-            obs: Original observation dict with 'pov' key.
+            obs: Original observation (dict with 'pov' and possibly other keys).
 
         Returns:
-            Extended observation dict with 'pov', 'time_left', 'yaw', 'pitch'.
+            Extended observation dict.
         """
         # Normalized episode time remaining: 1.0 at episode start, 0.0 at max_episode_steps
         time_left = max(0.0, (self.max_episode_steps - self.current_episode_step) / self.max_episode_steps)
@@ -75,13 +90,20 @@ class ObservationWrapper(gym.Wrapper):
         # Normalize pitch to [-1, 1] (from -90 to 90)
         normalized_pitch = self.pitch / 90.0
 
-        # Build extended observation
-        extended_obs = {
-            'pov': obs['pov'] if isinstance(obs, dict) else obs,
-            'time_left': np.array([time_left], dtype=np.float32),
-            'yaw': np.array([normalized_yaw], dtype=np.float32),
-            'pitch': np.array([normalized_pitch], dtype=np.float32),
-        }
+        if isinstance(obs, dict):
+            # Start from the original obs (so we keep 'inventory', etc.)
+            extended_obs = dict(obs)
+            pov = obs.get('pov', obs)
+        else:
+            # Fallback: obs wasn't a dict, treat it as the pov
+            extended_obs = {}
+            pov = obs
+
+        #pov and add scalar features
+        extended_obs['pov'] = pov
+        extended_obs['time_left'] = np.array([time_left], dtype=np.float32)
+        extended_obs['yaw'] = np.array([normalized_yaw], dtype=np.float32)
+        extended_obs['pitch'] = np.array([normalized_pitch], dtype=np.float32)
 
         return extended_obs
     
@@ -111,18 +133,25 @@ if __name__ == "__main__":
     class MockEnv:
         def __init__(self):
             self.observation_space = gym.spaces.Dict({
-                'pov': gym.spaces.Box(low=0, high=255, shape=(4, 84, 84), dtype=np.uint8)
+                'pov': gym.spaces.Box(low=0, high=255, shape=(4, 84, 84), dtype=np.uint8),
+                'inventory': gym.spaces.Box(low=0, high=64, shape=(3,), dtype=np.int32),
             })
             self.action_space = gym.spaces.Discrete(23)
             self.step_count = 0
         
         def reset(self):
             self.step_count = 0
-            return {'pov': np.zeros((4, 84, 84), dtype=np.uint8)}
+            return {
+                'pov': np.zeros((4, 84, 84), dtype=np.uint8),
+                'inventory': np.array([0, 0, 0], dtype=np.int32),
+            }
         
         def step(self, action):
             self.step_count += 1
-            obs = {'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8)}
+            obs = {
+                'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
+                'inventory': np.array([1, 2, 3], dtype=np.int32),
+            }
             reward = -0.001
             done = self.step_count >= 100
             return obs, reward, done, {}
@@ -133,7 +162,9 @@ if __name__ == "__main__":
     # Test reset
     obs = wrapped_env.reset()
     print(f"  After reset:")
+    print(f"    Keys: {list(obs.keys())}")
     print(f"    POV shape: {obs['pov'].shape}")
+    print(f"    Inventory: {obs['inventory']}")
     print(f"    Time Left: {obs['time_left'][0]:.3f} (should be 1.0)")
     print(f"    Yaw: {obs['yaw'][0]:.3f}")
     print(f"    Pitch: {obs['pitch'][0]:.3f}")
@@ -169,4 +200,3 @@ if __name__ == "__main__":
     assert obs['pitch'][0] == 1.0, "Pitch should be clamped to 1.0"
     
     print("\n✅ ObservationWrapper validated!")
-

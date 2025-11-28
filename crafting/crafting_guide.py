@@ -60,6 +60,14 @@ def _install_reset_hook(env):
 
 def craft_planks_from_logs(env, helper, logs_to_convert=3, width=640, height=360, obs=None):
     """ Inventory 2×2: Logs -> Planks. Checks requirements if it can craft """
+    global TABLE_GUI_OPEN
+
+    # If the 3x3 crafting table GUI is open, close it first.
+    if TABLE_GUI_OPEN:
+        helper.toggle_inventory(); tick(env, 2)
+        TABLE_GUI_OPEN = False
+        look(env, pitch=-7.0, repeats=6)
+
     if obs is not None:
         required_logs = max(3, logs_to_convert)
         if not ensure_have_items({"logs": required_logs}, obs):
@@ -91,6 +99,14 @@ def craft_planks_from_logs(env, helper, logs_to_convert=3, width=640, height=360
 
 def craft_sticks_in_inventory(env, helper, width=640, height=360, obs=None):
     """ Inventory 2x2: Sticks from Planks. Checks requirements if it can craft. """
+    global TABLE_GUI_OPEN
+
+    # If the 3x3 crafting table GUI is open, close it first.
+    if TABLE_GUI_OPEN:
+        helper.toggle_inventory(); tick(env, 2)
+        TABLE_GUI_OPEN = False
+        look(env, pitch=-7.0, repeats=6)
+
     if obs is not None:
         if not ensure_have_items({"planks": 2}, obs):
             return False
@@ -165,7 +181,7 @@ def craft_table_in_inventory(env, helper, width=640, height=360, obs=None):
 
 def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
     """ Table 3×3: Wooden Axe from Planks + Sticks. Checks requirements if it can craft """
-    global NEXT_AXE_SLOT, AXES_CRAFTED_THIS_EPISODE
+    global NEXT_AXE_SLOT, AXES_CRAFTED_THIS_EPISODE, TABLE_GUI_OPEN
 
     if not TABLE_GUI_OPEN:
         print("[crafting_guide] Not in crafting table 3x3 GUI. Aborting craft_wooden_axe.")
@@ -174,8 +190,14 @@ def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
     if obs is not None:
         if AXES_CRAFTED_THIS_EPISODE >= MAX_AXES_IN_HOTBAR:
             print("[crafting_guide] Axe cap reached (>= 5 axes in hotbar). Aborting craft_wooden_axe.")
+            helper.toggle_inventory()
+            TABLE_GUI_OPEN = False
+            look(env, pitch=-7.0, repeats=6)
             return False
         if not ensure_have_items({"planks": 3, "sticks": 2}, obs):
+            helper.toggle_inventory()
+            TABLE_GUI_OPEN = False
+            look(env, pitch=-7.0, repeats=6)
             return False
 
     tl, craft3_tl, craft3_out, inv_tl, hotbar_tl = table_gui_coords(width, height)
@@ -203,6 +225,7 @@ def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
     helper.move_to(ax, ay); helper.left_click(); tick(env, 2)
 
     helper.toggle_inventory()
+    TABLE_GUI_OPEN = False
     helper.select_hotbar(axe_slot)
     look(env, pitch=-7.0, repeats=6)
 

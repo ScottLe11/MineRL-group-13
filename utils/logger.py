@@ -115,26 +115,25 @@ class Logger:
         if q_std is not None:
             self.log_scalar("train/q_std", q_std, step)
     
-    def log_training_step(self, step: int, loss: float, q_mean: float, 
-                          td_error: float = None, per_beta: float = None):
+    def log_training_step(self, step: int, loss: float, **kwargs):
         """
-        Log detailed training step metrics including PER stats.
-        
+        Log detailed training step metrics (algorithm-agnostic).
+
         Args:
             step: Global step number.
             loss: Training loss.
-            q_mean: Mean Q-value of the batch.
-            td_error: Mean absolute TD error.
-            per_beta: Current PER importance sampling beta (if using PER).
+            **kwargs: Additional metrics to log:
+                - DQN: q_mean, td_error, per_beta
+                - PPO: policy_loss, value_loss, entropy
         """
         self.log_scalar("train/loss", loss, step)
-        self.log_scalar("train/q_mean", q_mean, step)
-        
-        if td_error is not None:
-            self.log_scalar("train/td_error", td_error, step)
-        
-        if per_beta is not None:
-            self.log_scalar("train/per_beta", per_beta, step)
+
+        # Log all additional metrics
+        for key, value in kwargs.items():
+            if value is not None:
+                # Convert underscores to forward slashes for TensorBoard hierarchy
+                metric_name = f"train/{key}"
+                self.log_scalar(metric_name, value, step)
     
     def set_step(self, step: int):
         """Set the global step counter."""

@@ -193,6 +193,6 @@ rewards:
 # HARDWARE
 # =============================================================================
 device: "auto"                       # "cpu", "cuda", "mps", or "auto"
-seed: null                           # Random seed (null for random)
+seed: 44                           # Random seed (null for random)
 
 

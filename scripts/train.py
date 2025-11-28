@@ -50,13 +50,14 @@ def set_seed(seed: int):
             torch.cuda.manual_seed_all(seed)
 
 
-def train(config: dict, render: bool = False):
+def train(config: dict, render: bool = False, resume_checkpoint: str = None):
     """
     Main training entry point - provides common infrastructure and routes to algorithm.
 
     Args:
         config: Configuration dictionary
         render: If True, render the Minecraft window during training
+        resume_checkpoint: Path to checkpoint file to resume from
     """
     # Setup
     set_seed(config.get('seed'))
@@ -72,35 +73,41 @@ def train(config: dict, render: bool = False):
     agent = create_agent(config, num_actions=env.action_space.n)
 
     algorithm = config.get('algorithm', 'dqn')
-    device = config['device'] # Use the device variable defined at the top
 
-    # Only load BC checkpoint if running DQN
-    if algorithm == 'dqn':
+    # Only load BC checkpoint if running DQN (and not resuming from a checkpoint)
+    if algorithm == 'dqn' and not resume_checkpoint:
         checkpoint_dir = config['training']['checkpoint_dir']
         bc_checkpoint_path = os.path.join(checkpoint_dir, "final_model_bc.pt")
-        
+
         if os.path.exists(bc_checkpoint_path):
             print(f"\n🧠 Loading BC pre-trained weights: {bc_checkpoint_path}")
-            
+
             # Load checkpoint data
             checkpoint = torch.load(bc_checkpoint_path, map_location=device)
-            
+
             # Load Q-Network weights from BC checkpoint
             if 'q_network_state_dict' in checkpoint:
                  # Load weights into the online Q-Network
                  agent.q_network.load_state_dict(checkpoint['q_network_state_dict'])
-                 
+
                  # Initialize target network with pre-trained weights too
                  agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
-                 
+
                  print("✅ Successfully loaded weights into Q-Network and Target Network.")
             else:
                  print("⚠️  Warning: BC checkpoint found but 'q_network_state_dict' key is missing.")
         else:
              print("⚠️  Warning: BC checkpoint not found. Starting DQN from scratch.")
-    
+
+    # Load checkpoint if resuming (overrides BC weights)
+    if resume_checkpoint:
+        if not os.path.exists(resume_checkpoint):
+            raise FileNotFoundError(f"Checkpoint not found: {resume_checkpoint}")
+        print(f"\n🔄 Resuming from checkpoint: {resume_checkpoint}")
+        agent.load(resume_checkpoint)
+        print("✅ Checkpoint loaded successfully\n")
+
     # Create logger
-    algorithm = config.get('algorithm', 'dqn')
     logger = Logger(
         log_dir=config['training']['log_dir'],
         experiment_name=f"treechop_{algorithm}_{config.get('seed', 'noseed')}"
@@ -134,6 +141,8 @@ def main():
                         help='Path to config file (default: config/config.yaml)')
     parser.add_argument('--render', action='store_true',
                         help='Render the Minecraft window during training')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to checkpoint to resume training from')
     args = parser.parse_args()
 
     # Load config
@@ -148,10 +157,12 @@ def main():
     print(f"Episodes: {config['training']['num_episodes']}")
     print(f"Episode length: {config['environment']['episode_seconds']}s")
     print(f"Render: {args.render}")
+    if args.resume:
+        print(f"Resume: {args.resume}")
     print("=" * 60)
 
     # Train
-    train(config, render=args.render)
+    train(config, render=args.render, resume_checkpoint=args.resume)
 
 
 if __name__ == "__main__":

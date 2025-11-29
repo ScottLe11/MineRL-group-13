@@ -90,12 +90,14 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
                 'time': float(obs['time_left'][0]) if hasattr(obs['time_left'], '__getitem__') else float(obs['time_left']),
                 'yaw': float(obs['yaw'][0]) if hasattr(obs['yaw'], '__getitem__') else float(obs['yaw']),
                 'pitch': float(obs['pitch'][0]) if hasattr(obs['pitch'], '__getitem__') else float(obs['pitch']),
+                'place_table_safe': float(obs['place_table_safe'][0]) if hasattr(obs['place_table_safe'], '__getitem__') else float(obs['place_table_safe']),
             }
             next_state = {
                 'pov': next_obs['pov'],
                 'time': float(next_obs['time_left'][0]) if hasattr(next_obs['time_left'], '__getitem__') else float(next_obs['time_left']),
                 'yaw': float(next_obs['yaw'][0]) if hasattr(next_obs['yaw'], '__getitem__') else float(next_obs['yaw']),
                 'pitch': float(next_obs['pitch'][0]) if hasattr(next_obs['pitch'], '__getitem__') else float(next_obs['pitch']),
+                'place_table_safe': float(next_obs['place_table_safe'][0]) if hasattr(next_obs['place_table_safe'], '__getitem__') else float(next_obs['place_table_safe']),
             }
             agent.store_experience(state, action, reward, next_state, done)
 

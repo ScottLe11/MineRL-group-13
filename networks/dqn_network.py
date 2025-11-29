@@ -123,6 +123,7 @@ class DQNNetwork(nn.Module):
             time_left = obs.get('time_left', torch.zeros(batch_size, device=device))
             yaw = obs.get('yaw', torch.zeros(batch_size, device=device))
             pitch = obs.get('pitch', torch.zeros(batch_size, device=device))
+            place_table_safe = obs.get('place_table_safe', torch.zeros(batch_size, device=device))
 
             # Ensure scalars are (batch, 1)
             if time_left.dim() == 1:
@@ -132,7 +133,7 @@ class DQNNetwork(nn.Module):
             if pitch.dim() == 1:
                 pitch = pitch.unsqueeze(1)
 
-            scalars = torch.cat([time_left, yaw, pitch], dim=1)  # (batch, 3)
+            scalars = torch.cat([time_left, yaw, pitch, place_table_safe], dim=1)  # (batch, 4)
 
         # Extract visual features
         # If using attention, apply it to conv features before FC layer

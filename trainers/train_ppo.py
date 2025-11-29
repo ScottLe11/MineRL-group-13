@@ -11,6 +11,8 @@ Common infrastructure (checkpointing, logging, env recreation) is in train.py.
 """
 
 import numpy as np
+import os
+import torch
 
 
 def train_ppo(config: dict, env, agent, logger, render: bool = False):
@@ -49,6 +51,26 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
     best_avg_wood = 0
     recent_wood = []
     episode = 0
+    
+    checkpoint_dir = config['training']['checkpoint_dir']
+    # The BC PPO checkpoint is saved using the algorithm name 'bc_ppo' (as per your helpers file)
+    bc_checkpoint_path = os.path.join(checkpoint_dir, "final_model_bc_ppo.pt")
+    
+    if os.path.exists(bc_checkpoint_path):
+        print(f"\n🧠 Loading BC pre-trained weights for PPO: {bc_checkpoint_path}")
+        
+        # Load checkpoint data
+        device = agent.device
+        checkpoint = torch.load(bc_checkpoint_path, map_location=device)
+        
+        # 2. Load the weights into the PPO agent's policy network
+        if 'policy_state_dict' in checkpoint:
+            agent.policy.load_state_dict(checkpoint['policy_state_dict'])
+            print("✅ Successfully loaded policy weights for PPO.")
+        else:
+            print("⚠️  Warning: BC PPO checkpoint found but 'policy_state_dict' key is missing.")
+    else:
+        print("⚠️  Warning: BC PPO checkpoint not found. Starting PPO from scratch.")
 
     # Main training loop
     while episode < num_episodes:

@@ -151,7 +151,8 @@ class ActorCriticNetwork(nn.Module):
         scalars = torch.stack([
             obs['time_left'].view(-1),
             obs['yaw'].view(-1),
-            obs['pitch'].view(-1)
+            obs['pitch'].view(-1),
+            obs['place_table_safe'].view(-1)
         ], dim=1)  # (batch, num_scalars)
 
         features = torch.cat([cnn_features, scalars], dim=1)  # (batch, feature_dim)

@@ -473,7 +473,7 @@ def train_bc_ppo(config: dict, env, agent, logger):
             # Construct observation dictionary for the PPO policy network
             obs_batch = {
                 'pov': pov_batch,
-                'time': time_batch,
+                'time_left': time_batch,
                 'yaw': yaw_batch,
                 'pitch': pitch_batch,
                 'place_table_safe': place_table_safe_batch

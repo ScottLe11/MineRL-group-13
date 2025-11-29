@@ -292,7 +292,9 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
         'yaw': torch.tensor(data['obs_yaw'], dtype=torch.float32),
         'pitch': torch.tensor(data['obs_pitch'], dtype=torch.float32),
         'place_table_safe': torch.tensor(data['obs_place_table_safe'], dtype=torch.float32),
-        'actions': torch.tensor(data['actions'], dtype=torch.long)
+        'actions': torch.tensor(data['actions'], dtype=torch.long),
+        'rewards': torch.tensor(data['rewards'], dtype=torch.float32),
+        'dones': torch.tensor(data['dones'], dtype=torch.bool)
     }
 
     # Ensure scalar tensors have correct shape (N, 1)
@@ -401,16 +403,75 @@ def train_bc(config: dict, env, agent, logger):
         # Save checkpoint
         if epoch % training_config.get('save_freq', 50) == 0:
             save_checkpoint(agent, config, epoch, save_buffer=False)
-            
-    # Final save
-    save_checkpoint(agent, config, num_epochs, final=True, save_buffer=False)
-    
+
+    # NOTE: We'll save the final checkpoint AFTER pre-filling the buffer
+    # This way the saved checkpoint includes expert demonstrations
+
     print(f"\n{'='*60}")
     print(f"BEHAVIORAL CLONING COMPLETE")
     print(f"{'='*60}")
     print(f"Total epochs: {num_epochs}")
     print(f"Total steps (batches): {global_step}")
     print(f"{'='*60}")
+
+    # Pre-fill replay buffer with expert demonstrations
+    print(f"\n{'='*60}")
+    print(f"PRE-FILLING REPLAY BUFFER WITH EXPERT DEMONSTRATIONS")
+    print(f"{'='*60}\n")
+
+    # Reload expert data (we already have it in expert_tensors, but let's be explicit)
+    num_transitions = len(expert_tensors['actions'])
+
+    # Construct (state, action, reward, next_state, done) tuples
+    # States are at indices [0, 1, 2, ..., N-1]
+    # Next states are at indices [1, 2, 3, ..., N]
+    # We can't create a transition for the last state (no next_state), so we use N-1 transitions
+
+    num_valid_transitions = num_transitions - 1
+    transitions_added = 0
+
+    print(f"Adding {num_valid_transitions} expert transitions to replay buffer...")
+
+    for i in range(num_valid_transitions):
+        # Current state
+        state = {
+            'pov': expert_tensors['pov'][i].unsqueeze(0),      # Add batch dim
+            'time': expert_tensors['time'][i].unsqueeze(0),
+            'yaw': expert_tensors['yaw'][i].unsqueeze(0),
+            'pitch': expert_tensors['pitch'][i].unsqueeze(0),
+            'place_table_safe': expert_tensors['place_table_safe'][i].unsqueeze(0)
+        }
+
+        # Next state
+        next_state = {
+            'pov': expert_tensors['pov'][i+1].unsqueeze(0),
+            'time': expert_tensors['time'][i+1].unsqueeze(0),
+            'yaw': expert_tensors['yaw'][i+1].unsqueeze(0),
+            'pitch': expert_tensors['pitch'][i+1].unsqueeze(0),
+            'place_table_safe': expert_tensors['place_table_safe'][i+1].unsqueeze(0)
+        }
+
+        action = int(expert_tensors['actions'][i].item())
+        reward = float(expert_tensors['rewards'][i].item())
+        done = bool(expert_tensors['dones'][i].item())
+
+        # Add to replay buffer
+        agent.replay_buffer.push(state, action, reward, next_state, done)
+        transitions_added += 1
+
+        # Log progress every 10%
+        if (i + 1) % max(1, num_valid_transitions // 10) == 0:
+            progress = (i + 1) / num_valid_transitions * 100
+            print(f"  Progress: {progress:.1f}% ({i+1}/{num_valid_transitions} transitions)")
+
+    print(f"\n✅ Successfully added {transitions_added} expert transitions to replay buffer")
+    print(f"   Replay buffer size: {len(agent.replay_buffer)} / {agent.replay_buffer.capacity}")
+    print(f"   Ready for DQN fine-tuning!\n")
+    print(f"{'='*60}\n")
+
+    # Final save with replay buffer
+    print("💾 Saving final checkpoint with expert demonstrations in replay buffer...")
+    save_checkpoint(agent, config, num_epochs, final=True, save_buffer=True)
 
     # No environment usage during BC, so just return
     return env

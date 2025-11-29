@@ -102,6 +102,26 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
                      agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
 
                      print("✅ Successfully loaded weights into Q-Network and Target Network.")
+
+                     # Load replay buffer if it exists (from bc_dqn with buffer pre-filling)
+                     if 'replay_buffer' in checkpoint:
+                         print("🔄 Restoring replay buffer with expert demonstrations...")
+                         buffer_data = checkpoint['replay_buffer']
+
+                         # Restore buffer experiences
+                         if hasattr(agent.replay_buffer, 'buffer'):
+                             # Regular ReplayBuffer
+                             agent.replay_buffer.buffer.extend(buffer_data)
+                             agent.replay_buffer.position = len(agent.replay_buffer.buffer) % agent.replay_buffer.capacity
+                             print(f"✅ Restored {len(buffer_data)} expert transitions to replay buffer")
+                         elif hasattr(agent.replay_buffer, 'add_experience'):
+                             # PrioritizedReplayBuffer
+                             for exp in buffer_data:
+                                 agent.replay_buffer.add_experience(*exp)
+                             print(f"✅ Restored {len(buffer_data)} expert transitions to prioritized replay buffer")
+                     else:
+                         print("ℹ️  No replay buffer in checkpoint (normal for older bc_dqn)")
+
                      loaded = True
                      break
                 else:

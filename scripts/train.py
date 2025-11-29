@@ -74,30 +74,41 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
 
     algorithm = config.get('algorithm', 'dqn')
 
-    # Only load BC checkpoint if running DQN (and not resuming from a checkpoint)
+    # Only load BC/DQfD checkpoint if running DQN (and not resuming from a checkpoint)
     if algorithm == 'dqn' and not resume_checkpoint:
         checkpoint_dir = config['training']['checkpoint_dir']
-        bc_checkpoint_path = os.path.join(checkpoint_dir, "final_model_bc.pt")
 
-        if os.path.exists(bc_checkpoint_path):
-            print(f"\n🧠 Loading BC pre-trained weights: {bc_checkpoint_path}")
+        # Try to load from bc_dqn or dqfd checkpoints (in order of preference)
+        checkpoint_paths = [
+            os.path.join(checkpoint_dir, "final_model_dqfd.pt"),    # Prefer DQfD (multi-objective)
+            os.path.join(checkpoint_dir, "final_model_bc_dqn.pt"),  # Then BC-DQN (simple)
+            os.path.join(checkpoint_dir, "final_model_bc.pt"),      # Legacy name
+        ]
 
-            # Load checkpoint data
-            checkpoint = torch.load(bc_checkpoint_path, map_location=device)
+        loaded = False
+        for bc_checkpoint_path in checkpoint_paths:
+            if os.path.exists(bc_checkpoint_path):
+                print(f"\n🧠 Loading pre-trained weights: {bc_checkpoint_path}")
 
-            # Load Q-Network weights from BC checkpoint
-            if 'q_network_state_dict' in checkpoint:
-                 # Load weights into the online Q-Network
-                 agent.q_network.load_state_dict(checkpoint['q_network_state_dict'])
+                # Load checkpoint data
+                checkpoint = torch.load(bc_checkpoint_path, map_location=device)
 
-                 # Initialize target network with pre-trained weights too
-                 agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
+                # Load Q-Network weights from checkpoint
+                if 'q_network_state_dict' in checkpoint:
+                     # Load weights into the online Q-Network
+                     agent.q_network.load_state_dict(checkpoint['q_network_state_dict'])
 
-                 print("✅ Successfully loaded weights into Q-Network and Target Network.")
-            else:
-                 print("⚠️  Warning: BC checkpoint found but 'q_network_state_dict' key is missing.")
-        else:
-             print("⚠️  Warning: BC checkpoint not found. Starting DQN from scratch.")
+                     # Initialize target network with pre-trained weights too
+                     agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
+
+                     print("✅ Successfully loaded weights into Q-Network and Target Network.")
+                     loaded = True
+                     break
+                else:
+                     print(f"⚠️  Warning: Checkpoint found but 'q_network_state_dict' key is missing.")
+
+        if not loaded:
+             print("⚠️  Info: No pre-trained checkpoint found. Starting DQN from scratch.")
 
     # Load checkpoint if resuming (overrides BC weights)
     if resume_checkpoint:
@@ -123,16 +134,20 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
     elif algorithm == 'ppo':
         from trainers.train_ppo import train_ppo
         env = train_ppo(config, env, agent, logger, render)
-    elif algorithm == 'bc':
+    elif algorithm == 'bc_dqn':
         from trainers.helpers import train_bc
-        # BC with DQN - does not require 'render'
+        # BC with DQN - simple supervised learning (cross-entropy loss only)
         env = train_bc(config, env, agent, logger)
     elif algorithm == 'bc_ppo':
         from trainers.helpers import train_bc_ppo
-        # BC with PPO - does not require 'render'
+        # BC with PPO - simple supervised learning (cross-entropy loss only)
         env = train_bc_ppo(config, env, agent, logger)
+    elif algorithm == 'dqfd':
+        from trainers.helpers import train_dqfd
+        # DQfD - advanced imitation learning (multi-objective loss)
+        env = train_dqfd(config, env, agent, logger)
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc', or 'bc_ppo'.")
+        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc_dqn', 'bc_ppo', or 'dqfd'.")
 
     # Cleanup
     logger.close()

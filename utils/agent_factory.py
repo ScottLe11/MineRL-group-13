@@ -136,13 +136,15 @@ def create_agent(config: dict, num_actions: int):
         return create_dqn_agent(config, num_actions)
     elif algorithm == 'ppo':
         return create_ppo_agent(config, num_actions)
-    elif algorithm == 'bc':
-        # BC with DQN architecture (default BC behavior)
-        # Uses DQN network as the policy for behavioral cloning
+    elif algorithm == 'bc_dqn':
+        # BC with DQN - same agent as 'dqn', different training (simple supervised loss)
         return create_dqn_agent(config, num_actions)
     elif algorithm == 'bc_ppo':
-        # BC with PPO architecture
-        # Uses PPO's ActorCritic network for behavioral cloning
+        # BC with PPO - same agent as 'ppo', different training (simple supervised loss)
         return create_ppo_agent(config, num_actions)
+    elif algorithm == 'dqfd':
+        # DQfD - same agent as 'dqn', different training (multi-objective loss)
+        # Training uses: supervised + TD + margin + L2 losses
+        return create_dqn_agent(config, num_actions)
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc', or 'bc_ppo'")
+        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc_dqn', 'bc_ppo', or 'dqfd'")

@@ -8,6 +8,7 @@ import torch.nn as nn
 from .cnn import create_cnn
 from .attention import create_attention
 from .dueling_head import DuelingHead
+from .scalar_network import ScalarNetwork
 
 
 class DQNNetwork(nn.Module):
@@ -34,7 +35,10 @@ class DQNNetwork(nn.Module):
         input_channels: int = 4,
         num_scalars: int = 3,
         cnn_architecture: str = 'small',
-        attention_type: str = 'none'
+        attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64
     ):
         """
         Args:
@@ -43,6 +47,9 @@ class DQNNetwork(nn.Module):
             num_scalars: Number of scalar observations (default: 3 for time_left, yaw, pitch)
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
+            scalar_hidden_dim: Hidden dimension for scalar network (default: 64)
+            scalar_output_dim: Output dimension for scalar network (default: 64)
         """
         super().__init__()
 
@@ -50,6 +57,7 @@ class DQNNetwork(nn.Module):
         self.num_scalars = num_scalars
         self.cnn_architecture = cnn_architecture
         self.attention_type = attention_type
+        self.use_scalar_network = use_scalar_network
 
         # CNN for visual features (configurable architecture)
         self.cnn = create_cnn(cnn_architecture, input_channels=input_channels)
@@ -91,8 +99,20 @@ class DQNNetwork(nn.Module):
         else:
             self.attention = nn.Identity()
 
+        # Optional scalar network for processing non-visual features
+        if use_scalar_network:
+            self.scalar_network = ScalarNetwork(
+                num_scalars=num_scalars,
+                hidden_dim=scalar_hidden_dim,
+                output_dim=scalar_output_dim
+            )
+            scalar_dim = scalar_output_dim
+        else:
+            self.scalar_network = None
+            scalar_dim = num_scalars
+
         # Combined feature dimension
-        combined_dim = cnn_output_dim + num_scalars
+        combined_dim = cnn_output_dim + scalar_dim
 
         # Dueling head
         self.head = DuelingHead(input_dim=combined_dim, num_actions=num_actions)
@@ -154,8 +174,14 @@ class DQNNetwork(nn.Module):
             # Standard forward pass (no attention)
             visual_features = self.cnn(pov)  # (batch, cnn_output_dim)
 
-        # Concatenate with scalars
-        combined = torch.cat([visual_features, scalars], dim=1)  # (batch, cnn_dim + 3)
+        # Process scalars (optionally through scalar network)
+        if self.scalar_network is not None:
+            scalar_features = self.scalar_network(scalars)  # (batch, scalar_output_dim)
+        else:
+            scalar_features = scalars  # (batch, num_scalars)
+
+        # Concatenate visual and scalar features
+        combined = torch.cat([visual_features, scalar_features], dim=1)  # (batch, cnn_dim + scalar_dim)
 
         # Compute Q-values
         q_values = self.head(combined)  # (batch, num_actions)

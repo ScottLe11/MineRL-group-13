@@ -12,6 +12,7 @@ from torch.distributions import Categorical
 
 from .cnn import create_cnn
 from .attention import create_attention
+from .scalar_network import ScalarNetwork
 
 
 class ActorCriticNetwork(nn.Module):
@@ -35,7 +36,10 @@ class ActorCriticNetwork(nn.Module):
         num_scalars: int = 3,
         hidden_size: int = 512,
         cnn_architecture: str = 'small',
-        attention_type: str = 'none'
+        attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64
     ):
         """
         Args:
@@ -45,6 +49,9 @@ class ActorCriticNetwork(nn.Module):
             hidden_size: Size of hidden layers
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
+            scalar_hidden_dim: Hidden dimension for scalar network (default: 64)
+            scalar_output_dim: Output dimension for scalar network (default: 64)
         """
         super().__init__()
 
@@ -52,6 +59,7 @@ class ActorCriticNetwork(nn.Module):
         self.num_scalars = num_scalars
         self.cnn_architecture = cnn_architecture
         self.attention_type = attention_type
+        self.use_scalar_network = use_scalar_network
 
         # Shared CNN backbone (configurable architecture!)
         self.cnn = create_cnn(cnn_architecture, input_channels=input_channels)
@@ -89,16 +97,28 @@ class ActorCriticNetwork(nn.Module):
         else:
             self.attention = nn.Identity()
 
+        # Optional scalar network for processing non-visual features
+        if use_scalar_network:
+            self.scalar_network = ScalarNetwork(
+                num_scalars=num_scalars,
+                hidden_dim=scalar_hidden_dim,
+                output_dim=scalar_output_dim
+            )
+            scalar_dim = scalar_output_dim
+        else:
+            self.scalar_network = None
+            scalar_dim = num_scalars
+
         # Feature dimension after CNN + scalars
-        self.feature_dim = cnn_output_dim + num_scalars
-        
+        self.feature_dim = cnn_output_dim + scalar_dim
+
         # Actor head (policy): outputs action logits
         self.actor = nn.Sequential(
             nn.Linear(self.feature_dim, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, num_actions)
         )
-        
+
         # Critic head (value): outputs state value
         self.critic = nn.Sequential(
             nn.Linear(self.feature_dim, hidden_size),
@@ -155,7 +175,14 @@ class ActorCriticNetwork(nn.Module):
             obs['place_table_safe'].view(-1)
         ], dim=1)  # (batch, num_scalars)
 
-        features = torch.cat([cnn_features, scalars], dim=1)  # (batch, feature_dim)
+        # Process scalars (optionally through scalar network)
+        if self.scalar_network is not None:
+            scalar_features = self.scalar_network(scalars)  # (batch, scalar_output_dim)
+        else:
+            scalar_features = scalars  # (batch, num_scalars)
+
+        # Concatenate visual and scalar features
+        features = torch.cat([cnn_features, scalar_features], dim=1)  # (batch, feature_dim)
 
         # Actor and critic outputs
         action_logits = self.actor(features)  # (batch, num_actions)

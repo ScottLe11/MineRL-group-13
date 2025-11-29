@@ -151,7 +151,8 @@ training:
   eval_episodes: 5                   # Episodes per evaluation
 
   # Environment recreation (prevent MineRL memory leaks)
-  
+  env_recreation_interval: 25        # Recreate env every N episodes (lower if timeouts persist)
+
   # Paths
   checkpoint_dir: "checkpoints"
   log_dir: "runs"
@@ -214,6 +215,6 @@ rewards:
 # HARDWARE
 # =============================================================================
 device: "auto"                       # "cpu", "cuda", "mps", or "auto"
-seed: 44                           # Random seed (null for random)
+seed: null                           # Random seed (null for random)
 
 

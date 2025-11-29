@@ -169,6 +169,34 @@ def log_episode_stats(episode: int, num_episodes: int, global_step: int,
         except Exception as e:
             print(f"  [Top Q-values] Error: {type(e).__name__}: {e}")
 
+    # Print policy info for PPO agents
+    if hasattr(agent, 'get_policy_info'):
+        try:
+            policy_info = agent.get_policy_info(obs)
+
+            # Get action names from environment
+            action_names = []
+            if hasattr(env, 'action_names'):
+                action_names = env.action_names
+            else:
+                from wrappers.actions import ACTION_NAMES_POOL
+                action_names = ACTION_NAMES_POOL[:agent.num_actions]
+
+            # Print entropy and value
+            entropy = policy_info['entropy']
+            value = policy_info['value']
+            print(f"  [Policy] Entropy: {entropy:.3f}, Value: {value:.2f}")
+
+            # Print top 5 actions by probability
+            top_actions = policy_info['top_actions']
+            top_probs_str = ", ".join([
+                f"{action_names[idx] if idx < len(action_names) else f'a{idx}'}:{prob*100:.1f}%"
+                for idx, prob in top_actions
+            ])
+            print(f"  [Top Probs] {top_probs_str}")
+        except Exception as e:
+            print(f"  [Policy Info] Error: {type(e).__name__}: {e}")
+
     # Print action statistics
     if hasattr(agent, 'get_action_stats'):
         stats = agent.get_action_stats()

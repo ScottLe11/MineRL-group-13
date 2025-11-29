@@ -1,8 +1,5 @@
 # MineRL Tree-Chopping RL Agent Configuration
-# Supports both DQN and PPO algorithms
-# =============================================================================
-algorithm: "bc"                     # Change this from "dqn" or "ppo" to "bc"
-
+# Supports DQN, PPO, and Behavioral Cloning algorithms
 # =============================================================================
 # BEHAVIORAL CLONING (BC) AGENT (NEW SECTION)
 # =============================================================================
@@ -168,7 +165,12 @@ ppo:
 # =============================================================================
 # ALGORITHM SELECTION
 # =============================================================================
-algorithm: "ppo"                     # "dqn" or "ppo or bc"
+# Options:
+#   - "dqn": Deep Q-Network (value-based RL)
+#   - "ppo": Proximal Policy Optimization (policy-based RL)
+#   - "bc": Behavioral Cloning with DQN architecture (supervised learning from expert data)
+#   - "bc_ppo": Behavioral Cloning with PPO architecture (supervised learning from expert data)
+algorithm: "bc_ppo"
 
 # =============================================================================
 # REWARD (Wood Inventory-Based)

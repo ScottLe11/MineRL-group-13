@@ -416,6 +416,123 @@ def train_bc(config: dict, env, agent, logger):
     return env
 
 
+def train_bc_ppo(config: dict, env, agent, logger):
+    """
+    Behavioral Cloning (BC) training loop for PPO (Supervised Learning).
+
+    Trains the PPO policy network to imitate expert demonstrations.
+    Similar to train_bc but for PPO's ActorCriticNetwork instead of Q-Network.
+
+    Args:
+        config: Configuration dict
+        env: MineRL environment (used only for initialization/cleanup)
+        agent: PPOAgent (used as the policy network)
+        logger: TensorBoard logger
+    """
+    bc_config = config.get('bc', {})
+    training_config = config['training']
+    device = agent.device
+
+    # 1. Load Data
+    data_path = bc_config.get('data_path', 'bc_expert_data.npz')
+    print(f"\n📦 Starting Behavioral Cloning (BC) for PPO using data from: {data_path}")
+    expert_tensors = load_bc_data(data_path)
+
+    # 2. Setup DataLoader
+    dataset = TensorDataset(
+        expert_tensors['pov'].to(device),
+        expert_tensors['time'].to(device),
+        expert_tensors['yaw'].to(device),
+        expert_tensors['pitch'].to(device),
+        expert_tensors['place_table_safe'].to(device),
+        expert_tensors['actions'].to(device)
+    )
+    dataloader = DataLoader(
+        dataset,
+        batch_size=bc_config.get('batch_size', 32),
+        shuffle=True
+    )
+    num_epochs = training_config.get('num_episodes', 100)
+
+    # 3. Use PPO Policy Network and Setup Optimizer/Loss
+    # The PPOAgent has a policy (ActorCriticNetwork) with actor and critic heads
+    # We'll train the actor head to match expert actions
+
+    optimizer = optim.Adam(agent.policy.parameters(), lr=bc_config.get('learning_rate', 1e-4))
+
+    global_step = 0
+
+    print(f"Training for {num_epochs} epochs with {len(dataloader)} batches per epoch.")
+
+    # 4. Main BC Training Loop
+    for epoch in range(1, num_epochs + 1):
+        total_epoch_loss = 0
+        num_batches = 0
+
+        for pov_batch, time_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
+            # Construct observation dictionary for the PPO policy network
+            obs_batch = {
+                'pov': pov_batch,
+                'time': time_batch,
+                'yaw': yaw_batch,
+                'pitch': pitch_batch,
+                'place_table_safe': place_table_safe_batch
+            }
+
+            # Forward pass: get action logits from the policy network
+            # ActorCriticNetwork returns (action_logits, value)
+            # We only need action_logits for BC
+            action_logits, _ = agent.policy(obs_batch)
+
+            # Loss: Cross-Entropy between policy logits and expert actions
+            loss = F.cross_entropy(action_logits, action_batch)
+
+            # Gradient clipping (max_grad_norm)
+            max_grad_norm = bc_config.get('gradient_clip', 10.0)
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(agent.policy.parameters(), max_norm=max_grad_norm)
+            optimizer.step()
+
+            total_epoch_loss += loss.item()
+            num_batches += 1
+            global_step += 1
+
+            # Log metrics every N steps
+            if global_step % 50 == 0:
+                avg_loss = total_epoch_loss / num_batches
+                logger.log_training_step(
+                    step=global_step,
+                    loss=avg_loss,
+                    q_mean=action_logits.mean().item()
+                )
+
+        # Log end of epoch metrics
+        avg_loss = total_epoch_loss / num_batches
+        logger.log_scalar("bc/loss_epoch", avg_loss, epoch)
+
+        # Console logging
+        print(f"Epoch {epoch}/{num_epochs} | Loss: {avg_loss:.4f} | Global Steps: {global_step}")
+
+        # Save checkpoint
+        if epoch % training_config.get('save_freq', 50) == 0:
+            save_checkpoint(agent, config, epoch, save_buffer=False)
+
+    # Final save
+    save_checkpoint(agent, config, num_epochs, final=True, save_buffer=False)
+
+    print(f"\n{'='*60}")
+    print(f"BEHAVIORAL CLONING (PPO) COMPLETE")
+    print(f"{'='*60}")
+    print(f"Total epochs: {num_epochs}")
+    print(f"Total steps (batches): {global_step}")
+    print(f"{'='*60}")
+
+    # No environment usage during BC, so just return
+    return env
+
+
 
 
 
@@ -480,12 +597,15 @@ def train(config: dict, render: bool = False):
         from trainers.train_ppo import train_ppo
         env = train_ppo(config, env, agent, logger, render)
     elif algorithm == 'bc':
-        # Behavioral Cloning uses the DQN network architecture as its policy
+        # Behavioral Cloning with DQN architecture
         # NOTE: Environment is NOT used during BC training epochs, only for init.
-        # But we pass it along for consistent cleanup.
         env = train_bc(config, env, agent, logger)
+    elif algorithm == 'bc_ppo':
+        # Behavioral Cloning with PPO architecture
+        # NOTE: Environment is NOT used during BC training epochs, only for init.
+        env = train_bc_ppo(config, env, agent, logger)
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn' or 'ppo'.")
+        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc', or 'bc_ppo'.")
 
     # Cleanup
     logger.close()

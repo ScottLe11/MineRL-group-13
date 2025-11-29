@@ -123,12 +123,16 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
     elif algorithm == 'ppo':
         from trainers.train_ppo import train_ppo
         env = train_ppo(config, env, agent, logger, render)
-    elif algorithm == 'bc': 
+    elif algorithm == 'bc':
         from trainers.helpers import train_bc
-        # BC does not require 'render'
+        # BC with DQN - does not require 'render'
         env = train_bc(config, env, agent, logger)
+    elif algorithm == 'bc_ppo':
+        from trainers.helpers import train_bc_ppo
+        # BC with PPO - does not require 'render'
+        env = train_bc_ppo(config, env, agent, logger)
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn' or 'ppo'.")
+        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc', or 'bc_ppo'.")
 
     # Cleanup
     logger.close()

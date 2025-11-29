@@ -44,7 +44,7 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
     agent = DQNAgent(
         num_actions=num_actions,
         input_channels=network_config['input_channels'],
-        num_scalars=3,  # time, yaw, pitch
+        num_scalars=4,  # time_left, yaw, pitch, place_table_safe
         learning_rate=dqn_config['learning_rate'],
         gamma=dqn_config['gamma'],
         # Target update settings
@@ -99,7 +99,7 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
     agent = PPOAgent(
         num_actions=num_actions,
         input_channels=network_config['input_channels'],
-        num_scalars=3,  # time, yaw, pitch
+        num_scalars=4,  # time_left, yaw, pitch, place_table_safe
         learning_rate=ppo_config['learning_rate'],
         gamma=ppo_config['gamma'],
         gae_lambda=ppo_config['gae_lambda'],
@@ -137,10 +137,12 @@ def create_agent(config: dict, num_actions: int):
     elif algorithm == 'ppo':
         return create_ppo_agent(config, num_actions)
     elif algorithm == 'bc':
-        # FIX: BC uses the DQN architecture (DQNAgent) as its underlying policy network.
-        # We must call the DQN factory function here.
-        # We pass the full config, which contains BC hyperparameters, but the DQN 
-        # agent knows to ignore its RL-specific components (like the buffer) during BC training.
+        # BC with DQN architecture (default BC behavior)
+        # Uses DQN network as the policy for behavioral cloning
         return create_dqn_agent(config, num_actions)
+    elif algorithm == 'bc_ppo':
+        # BC with PPO architecture
+        # Uses PPO's ActorCritic network for behavioral cloning
+        return create_ppo_agent(config, num_actions)
     else:
-        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn' or 'ppo'")
+        raise ValueError(f"Unknown algorithm: {algorithm}. Must be 'dqn', 'ppo', 'bc', or 'bc_ppo'")

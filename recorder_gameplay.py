@@ -11,7 +11,28 @@ from pathlib import Path
 WINDOW_W, WINDOW_H = 960, 540
 MOUSE_SENS = 0.20
 KEYS_DOWN, MOUSE_BTNS = set(), set()
-re        a[f'hotbar.{i}'] = 1 if key in KEYS_DOWN else 0
+INVENTORY_TAP = DROP_TAP = SWAPHANDS_TAP = 0
+
+def make_action(env, mouse_dx, mouse_dy):
+    """Converts pygame input state into a valid MineRL dictionary action."""
+    global INVENTORY_TAP, DROP_TAP, SWAPHANDS_TAP
+    a = env.action_space.no_op()
+    a['forward'] = 1 if pygame.K_w in KEYS_DOWN else 0
+    a['back']    = 1 if pygame.K_s in KEYS_DOWN else 0
+    a['left']    = 1 if pygame.K_a in KEYS_DOWN else 0
+    a['right']   = 1 if pygame.K_d in KEYS_DOWN else 0
+    a['jump']    = 1 if pygame.K_SPACE in KEYS_DOWN else 0
+    a['sneak']   = 1 if (pygame.K_LSHIFT in KEYS_DOWN or pygame.K_RSHIFT in KEYS_DOWN) else 0
+    a['sprint']  = 1 if (pygame.K_LCTRL in KEYS_DOWN or pygame.K_RCTRL in KEYS_DOWN) else 0
+    a['attack']    = 1 if 1 in MOUSE_BTNS else 0
+    a['use']       = 1 if 3 in MOUSE_BTNS else 0
+    a['pickItem']  = 1 if 2 in MOUSE_BTNS else 0
+    a['inventory'] = 1 if INVENTORY_TAP else 0
+    a['drop']      = 1 if DROP_TAP else 0
+    a['swapHands'] = 1 if SWAPHANDS_TAP else 0
+    INVENTORY_TAP = DROP_TAP = SWAPHANDS_TAP = 0
+    for i, key in enumerate([pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4,pygame.K_5,pygame.K_6,pygame.K_7,pygame.K_8,pygame.K_9], start=1):
+        a[f'hotbar.{i}'] = 1 if key in KEYS_DOWN else 0
     a['camera'] = [float(mouse_dy * MOUSE_SENS), float(mouse_dx * MOUSE_SENS)]
     return a
 

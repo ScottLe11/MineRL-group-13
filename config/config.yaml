@@ -26,18 +26,26 @@ bc:
 # =============================================================================
 environment:
   name: "MineRLcustom_treechop-v0"
-  
+
   # Episode length
   # - Each agent step = 4 frames = 200ms = 0.2 seconds
   # - So 1 second = 5 agent steps
   # - Recon: 20 seconds, Full: 60 seconds
   episode_seconds: 25                # Episode duration (20s recon, 60s full)
   # max_steps is computed: episode_seconds * 5
-  
+
   # Visual processing
   frame_shape: [84, 84]              # Grayscale frame size (matches Atari standard)
   frame_stack: 4                     # Number of stacked frames
-  
+
+  # JAR Modifications (Optional, see scripts/setup_minerl_environment.sh)
+  # To optimize the environment for tree-chopping training:
+  #   1. Run: bash scripts/setup_minerl_environment.sh
+  #   2. This sets tall birch forest biome (dense trees everywhere)
+  #   3. Removes unwanted drops (flowers, seeds, saplings, etc.)
+  # With JAR mods, spawn_type becomes effectively "near_tree"
+  # To restore: bash scripts/restore_original_jar.sh
+
   # Curriculum (starting conditions) - see config/CURRICULUM_LEARNING.md
   curriculum:
     spawn_type: "random"             # "random" or "near_tree" (near_tree needs custom handler)
@@ -96,13 +104,13 @@ dqn:
   # Learning
   learning_rate: 0.0001              # Adam learning rate
   gamma: 0.99                        # Discount factor
-  batch_size: 32                     # Training batch size
+  batch_size: 64                     # Training batch size
   gradient_clip: 5                # Max gradient norm
   
   # Replay Buffer
   replay_buffer:
-    capacity: 50000                 # Buffer size (experiences)
-    min_size: 5000                  # Min experiences before training
+    capacity: 40000                 # Buffer size (experiences)
+    min_size: 4000                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
   # NOTE: decay_steps is in AGENT STEPS, not episodes
@@ -117,7 +125,7 @@ dqn:
   target_update:
     method: "hard"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
-    hard_update_freq: 6           # Steps between hard updates (if hard)
+    hard_update_freq: 400           # Steps between hard updates (if hard)
   
   # Prioritized Experience Replay (optional)
   prioritized_replay:
@@ -143,7 +151,6 @@ training:
   eval_episodes: 5                   # Episodes per evaluation
 
   # Environment recreation (prevent MineRL memory leaks)
-  env_recreation_interval: 20        # Recreate env every N episodes (lower if timeouts persist)
   
   # Paths
   checkpoint_dir: "checkpoints"
@@ -182,7 +189,7 @@ ppo:
 #               → Same agent as 'ppo', different training
 #   - "dqfd": Deep Q-Learning from Demonstrations (advanced: multi-objective loss)
 #             → Same agent as 'dqn', different training (supervised + TD + margin + L2)
-algorithm: "bc_ppo"
+algorithm: "ppo"
 
 # =============================================================================
 # REWARD (Wood Inventory-Based)

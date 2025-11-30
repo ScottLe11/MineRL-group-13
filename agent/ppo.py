@@ -264,7 +264,44 @@ class PPOAgent:
             'last_100_unique': len(set(self.last_actions)) if self.last_actions else 0,
             'last_100_actions': self.last_actions.copy()
         }
-    
+
+    def get_policy_info(self, state: dict) -> dict:
+        """
+        Get policy information for monitoring (PPO equivalent of Q-values).
+
+        Args:
+            state: Observation dict
+
+        Returns:
+            Dict with:
+            - 'action_probs': Probability distribution over actions (numpy array)
+            - 'entropy': Policy entropy (scalar, higher = more exploratory)
+            - 'value': State value estimate (scalar)
+            - 'top_actions': List of (action_idx, probability) tuples for top actions
+        """
+        with torch.no_grad():
+            state_tensor = self._state_to_tensor(state)
+            action_logits, value = self.policy.forward(state_tensor)
+
+            # Get probabilities
+            import torch.nn.functional as F
+            probs = F.softmax(action_logits, dim=-1)
+
+            # Get entropy
+            from torch.distributions import Categorical
+            dist = Categorical(probs)
+            entropy = dist.entropy()
+
+            # Convert to numpy
+            probs_np = probs.cpu().numpy().flatten()
+
+            return {
+                'action_probs': probs_np,
+                'entropy': entropy.item(),
+                'value': value.item(),
+                'top_actions': sorted(enumerate(probs_np), key=lambda x: x[1], reverse=True)[:5]
+            }
+
     def store_transition(self, state: dict, action: int, log_prob: float,
                         reward: float, value: float, done: bool):
         """Store transition in rollout buffer."""

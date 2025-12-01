@@ -375,7 +375,8 @@ class DQNAgent:
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
             'time': torch.tensor(np.array([state.get('time', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
             'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device)
+            'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'place_table_safe': torch.tensor(np.array([state.get('place_table_safe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device)
         }
     
     def _batch_states_to_tensor(self, states: list) -> Dict:
@@ -384,12 +385,14 @@ class DQNAgent:
         times = np.array([s.get('time', 0.0) for s in states])
         yaws = np.array([s.get('yaw', 0.0) for s in states])
         pitches = np.array([s.get('pitch', 0.0) for s in states])
+        place_table_safes = np.array([s.get('place_table_safe', 0.0) for s in states])
         
         return {
             'pov': torch.tensor(povs, dtype=torch.float32, device=self.device),
             'time': torch.tensor(times, dtype=torch.float32, device=self.device),
             'yaw': torch.tensor(yaws, dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor(pitches, dtype=torch.float32, device=self.device)
+            'pitch': torch.tensor(pitches, dtype=torch.float32, device=self.device),
+            'place_table_safe': torch.tensor(place_table_safes, dtype=torch.float32, device=self.device)
         }
     
     def save(self, path: str):

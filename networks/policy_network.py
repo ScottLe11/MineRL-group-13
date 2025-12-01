@@ -33,7 +33,7 @@ class ActorCriticNetwork(nn.Module):
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 3,
+        num_scalars: int = 4,
         hidden_size: int = 512,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
@@ -45,7 +45,7 @@ class ActorCriticNetwork(nn.Module):
         Args:
             num_actions: Number of discrete actions
             input_channels: Number of stacked frames (default 4)
-            num_scalars: Number of scalar observations (time_left, yaw, pitch)
+            num_scalars: Number of scalar observations (time_left, yaw, pitch, place_table_safe)
             hidden_size: Size of hidden layers
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
@@ -137,15 +137,18 @@ class ActorCriticNetwork(nn.Module):
                     nn.init.orthogonal_(layer.weight, gain=0.01)
                     nn.init.constant_(layer.bias, 0)
     
-    def forward(self, obs: dict) -> tuple:
+    def forward(self, obs: dict, return_attention: bool = False):
         """
         Forward pass returning policy logits and value.
 
         Args:
             obs: Dict with 'pov', 'time_left', 'yaw', 'pitch' tensors
+            return_attention: If True, return attention maps (only if attention is enabled)
 
         Returns:
-            (action_logits, value): Tuple of policy logits and state value
+            action_logits: (batch, num_actions) tensor
+            value: (batch,) tensor
+            attention_map: (batch, 1, H, W) tensor (only if return_attention=True and attention enabled)
         """
         # Process visual observation
         pov = obs['pov']
@@ -153,12 +156,13 @@ class ActorCriticNetwork(nn.Module):
             pov = pov.float() / 255.0  # Normalize to [0, 1]
 
         # Extract visual features (with attention if enabled)
+        attention_map = None
         if self.use_attention and hasattr(self.cnn, 'conv') and hasattr(self.cnn, 'fc'):
             # Conv features
             conv_features = self.cnn.conv(pov)  # (batch, channels, H, W)
 
             # Apply attention
-            attended_features, _ = self.attention(conv_features)  # (batch, channels, H, W)
+            attended_features, attention_map = self.attention(conv_features)  # (batch, channels, H, W), (batch, 1, H, W)
 
             # Flatten and FC layer
             flattened = attended_features.view(attended_features.size(0), -1)
@@ -167,13 +171,26 @@ class ActorCriticNetwork(nn.Module):
             # No attention, use CNN directly
             cnn_features = self.cnn(pov)  # (batch, cnn_output_dim)
 
-        # Concatenate scalar features
-        scalars = torch.stack([
-            obs['time_left'].view(-1),
-            obs['yaw'].view(-1),
-            obs['pitch'].view(-1),
-            obs['place_table_safe'].view(-1)
-        ], dim=1)  # (batch, num_scalars)
+        # Concatenate scalar features (handle optional scalars gracefully)
+        batch_size = pov.size(0)
+        device = pov.device
+        
+        time_left = obs.get('time_left', torch.zeros(batch_size, device=device))
+        yaw = obs.get('yaw', torch.zeros(batch_size, device=device))
+        pitch = obs.get('pitch', torch.zeros(batch_size, device=device))
+        place_table_safe = obs.get('place_table_safe', torch.zeros(batch_size, device=device))
+        
+        # Ensure scalars are (batch,) for stacking
+        if time_left.dim() > 1:
+            time_left = time_left.view(-1)
+        if yaw.dim() > 1:
+            yaw = yaw.view(-1)
+        if pitch.dim() > 1:
+            pitch = pitch.view(-1)
+        if place_table_safe.dim() > 1:
+            place_table_safe = place_table_safe.view(-1)
+        
+        scalars = torch.stack([time_left, yaw, pitch, place_table_safe], dim=1)  # (batch, 4)
 
         # Process scalars (optionally through scalar network)
         if self.scalar_network is not None:
@@ -188,7 +205,10 @@ class ActorCriticNetwork(nn.Module):
         action_logits = self.actor(features)  # (batch, num_actions)
         value = self.critic(features).squeeze(-1)  # (batch,)
 
-        return action_logits, value
+        if return_attention and attention_map is not None:
+            return action_logits, value, attention_map
+        else:
+            return action_logits, value
     
     def get_action_and_value(self, obs: dict, action: torch.Tensor = None):
         """
@@ -233,6 +253,7 @@ if __name__ == "__main__":
         'time_left': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([0.0, 0.5]),
         'pitch': torch.tensor([0.0, -0.2]),
+        'place_table_safe': torch.tensor([1.0, 0.0]),
     }
     
     logits, value = network(obs)

@@ -117,16 +117,18 @@ class DQNNetwork(nn.Module):
         # Dueling head
         self.head = DuelingHead(input_dim=combined_dim, num_actions=num_actions)
     
-    def forward(self, obs: dict) -> torch.Tensor:
+    def forward(self, obs: dict, return_attention: bool = False):
         """
         Forward pass through the network.
 
         Args:
             obs: Dictionary with keys 'pov', 'time_left', 'yaw', 'pitch'
                  OR a tensor for pov only (for simple testing)
+            return_attention: If True, return attention maps (only if attention is enabled)
 
         Returns:
             q_values: (batch, num_actions) tensor
+            attention_map: (batch, 1, H, W) tensor (only if return_attention=True and attention enabled)
         """
         if isinstance(obs, torch.Tensor):
             # Simple case: just pov tensor, no scalars
@@ -156,6 +158,7 @@ class DQNNetwork(nn.Module):
 
         # Extract visual features
         # If using attention, apply it to conv features before FC layer
+        attention_map = None
         if self.use_attention and hasattr(self.cnn, 'conv') and hasattr(self.cnn, 'fc'):
             # Normalize input
             if pov.max() > 1.0:
@@ -165,7 +168,7 @@ class DQNNetwork(nn.Module):
             conv_features = self.cnn.conv(pov)  # (batch, channels, H, W)
 
             # Apply attention
-            attended_features, _ = self.attention(conv_features)  # (batch, channels, H, W)
+            attended_features, attention_map = self.attention(conv_features)  # (batch, channels, H, W), (batch, 1, H, W)
 
             # Flatten and pass through FC
             attended_features = attended_features.view(attended_features.size(0), -1)
@@ -186,7 +189,10 @@ class DQNNetwork(nn.Module):
         # Compute Q-values
         q_values = self.head(combined)  # (batch, num_actions)
 
-        return q_values
+        if return_attention and attention_map is not None:
+            return q_values, attention_map
+        else:
+            return q_values
     
     def get_action(self, obs: dict, epsilon: float = 0.0) -> int:
         """

@@ -31,9 +31,14 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
     # Log network architecture choice
     arch_name = network_config.get('architecture', 'small')
     attention_type = network_config.get('attention', 'none')
+    use_scalar_network = network_config.get('use_scalar_network', False)
+    scalar_hidden_dim = network_config.get('scalar_hidden_dim', 64)
+    scalar_output_dim = network_config.get('scalar_output_dim', 64)
     arch_info = get_architecture_info().get(arch_name, {})
     print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
     print(f"Attention mechanism: {attention_type}")
+    print(f"Scalar network: {'enabled' if use_scalar_network else 'disabled'}" +
+          (f" (hidden={scalar_hidden_dim}, output={scalar_output_dim})" if use_scalar_network else ""))
 
     # Log PER and target update settings
     use_per = per_config.get('enabled', False)
@@ -44,12 +49,13 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
     agent = DQNAgent(
         num_actions=num_actions,
         input_channels=network_config['input_channels'],
-        num_scalars=4,  # time_left, yaw, pitch, place_table_safe
+        num_scalars=3,  # time_left, yaw, pitch
         learning_rate=dqn_config['learning_rate'],
         gamma=dqn_config['gamma'],
         # Target update settings
         tau=target_config.get('tau', 0.005),
         target_update_method=target_method,
+        soft_update_freq=target_config.get('soft_update_freq', 1),
         hard_update_freq=target_config.get('hard_update_freq', 1000),
         # Exploration settings
         epsilon_start=dqn_config['exploration']['epsilon_start'],
@@ -69,6 +75,10 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
         # Network architecture
         cnn_architecture=arch_name,
         attention_type=attention_type,
+        # Scalar network settings
+        use_scalar_network=use_scalar_network,
+        scalar_hidden_dim=scalar_hidden_dim,
+        scalar_output_dim=scalar_output_dim,
         device=config['device']
     )
 
@@ -92,14 +102,19 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
     # Log network architecture choice (now PPO supports configurable CNNs!)
     arch_name = network_config.get('architecture', 'small')
     attention_type = network_config.get('attention', 'none')
+    use_scalar_network = network_config.get('use_scalar_network', False)
+    scalar_hidden_dim = network_config.get('scalar_hidden_dim', 64)
+    scalar_output_dim = network_config.get('scalar_output_dim', 64)
     arch_info = get_architecture_info().get(arch_name, {})
     print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
     print(f"Attention mechanism: {attention_type}")
+    print(f"Scalar network: {'enabled' if use_scalar_network else 'disabled'}" +
+          (f" (hidden={scalar_hidden_dim}, output={scalar_output_dim})" if use_scalar_network else ""))
 
     agent = PPOAgent(
         num_actions=num_actions,
         input_channels=network_config['input_channels'],
-        num_scalars=4,  # time_left, yaw, pitch, place_table_safe
+        num_scalars=3,  # time_left, yaw, pitch
         learning_rate=ppo_config['learning_rate'],
         gamma=ppo_config['gamma'],
         gae_lambda=ppo_config['gae_lambda'],
@@ -113,6 +128,10 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
         # Network architecture (now configurable!)
         cnn_architecture=arch_name,
         attention_type=attention_type,
+        # Scalar network settings
+        use_scalar_network=use_scalar_network,
+        scalar_hidden_dim=scalar_hidden_dim,
+        scalar_output_dim=scalar_output_dim,
         device=config['device']
     )
 

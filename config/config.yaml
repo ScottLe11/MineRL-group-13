@@ -61,7 +61,7 @@ network:
   # CNN Architecture selection
   # Options: 'tiny' (~150K), 'small' (~400K), 'medium' (~600K), 'wide' (~1M), 'deep' (~500K)
   # CNN output dimension is architecture-dependent (256 for tiny, 512 for others)
-  architecture: "wide"              # Default: small (Atari DQN style, proven baseline)
+  architecture: "medium"              # Default: small (Atari DQN style, proven baseline)
 
   # Attention mechanism (optional)
   # Options: 'none', 'spatial', 'cbam', 'treechop_bias'
@@ -69,7 +69,15 @@ network:
   # - spatial: Pure spatial attention (learns where to look)
   # - cbam: Combined channel + spatial (full CBAM module, most comprehensive)
   # - treechop_bias: Spatial attention biased toward screen center and hotbar
-  attention: "spatial"
+  attention: "cbam"
+
+  # Scalar network (optional)
+  # Processes scalar observations (time_left, yaw, pitch) through 2-layer FC before fusion
+  # - false: Scalars concatenated directly with visual features (default)
+  # - true: Scalars processed through FC(hidden)->ReLU->FC(output)->ReLU before fusion
+  use_scalar_network: true            # Enable extra FC layer for scalar processing
+  scalar_hidden_dim: 64               # Hidden layer size in scalar network
+  scalar_output_dim: 64               # Output dimension (fused with CNN features)
   
 # =============================================================================
 # ACTION SPACE
@@ -102,15 +110,15 @@ dqn:
   num_actions: null                  # Auto-computed from action_space config
   
   # Learning
-  learning_rate: 0.0001              # Adam learning rate
-  gamma: 0.99                        # Discount factor
-  batch_size: 64                     # Training batch size
+  learning_rate: 0.0002              # Adam learning rate
+  gamma: 0.95                        # Discount factor
+  batch_size: 256                     # Training batch size
   gradient_clip: 5                # Max gradient norm
   
   # Replay Buffer
   replay_buffer:
-    capacity: 40000                 # Buffer size (experiences)
-    min_size: 4000                  # Min experiences before training
+    capacity: 20000                 # Buffer size (experiences)
+    min_size: 2500                  # Min experiences before training
   
   # Exploration (epsilon-greedy)
   # NOTE: decay_steps is in AGENT STEPS, not episodes
@@ -123,9 +131,10 @@ dqn:
   
   # Target Network
   target_update:
-    method: "hard"                   # "soft" or "hard"
+    method: "soft"                   # "soft" or "hard"
     tau: 0.005                       # Soft update coefficient
-    hard_update_freq: 400           # Steps between hard updates (if hard)
+    soft_update_freq: 5             # Train steps between soft updates (if soft, 1=every step)
+    hard_update_freq: 400           # Train steps between hard updates (if hard)
   
   # Prioritized Experience Replay (optional)
   prioritized_replay:
@@ -142,7 +151,7 @@ training:
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
   num_episodes: 400                  # Total episodes to train
-  train_freq: 12                      # Train every N agent steps
+  train_freq: 5                      # Train every N agent steps
   
   # Logging & Saving (in episodes)
   log_freq: 5                        # Log metrics every N episodes
@@ -167,7 +176,7 @@ training:
 # PPO (Alternative to DQN)
 # =============================================================================
 ppo:
-  learning_rate: 0.0008              # Typically higher than DQN
+  learning_rate: 0.0005              # Typically higher than DQN
   gamma: 0.99                        # Discount factor
   gae_lambda: 0.95                   # GAE lambda
   clip_epsilon: 0.2                  # PPO clipping parameter
@@ -190,7 +199,7 @@ ppo:
 #               → Same agent as 'ppo', different training
 #   - "dqfd": Deep Q-Learning from Demonstrations (advanced: multi-objective loss)
 #             → Same agent as 'dqn', different training (supervised + TD + margin + L2)
-algorithm: "ppo"
+algorithm: "dqn"
 
 # =============================================================================
 # REWARD (Wood Inventory-Based)

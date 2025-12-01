@@ -3,10 +3,12 @@
 Unified evaluation script for MineRL Tree-Chopping RL Agents.
 
 Supports both DQN and PPO algorithms.
+Episodes run for a fixed number of steps (not based on done signal).
 
 Usage:
     python scripts/evaluate.py --checkpoint checkpoints/best_model_dqn.pt --algorithm dqn
     python scripts/evaluate.py --checkpoint checkpoints/final_model_ppo.pt --algorithm ppo --episodes 10 --render
+    python scripts/evaluate.py --checkpoint checkpoints/best_model_ppo.pt --algorithm ppo --max-steps 200
 """
 
 import argparse
@@ -56,13 +58,14 @@ def load_agent_from_checkpoint(checkpoint_path: str, config: dict, num_actions: 
     return agent
 
 
-def evaluate_episode(env, agent, render: bool = False):
+def evaluate_episode(env, agent, max_steps: int, render: bool = False):
     """
-    Run a single evaluation episode.
+    Run a single evaluation episode for a fixed number of steps.
 
     Args:
         env: The environment
         agent: Trained agent (DQN or PPO)
+        max_steps: Maximum steps per episode (episode ends after this many steps)
         render: Whether to render the episode
 
     Returns:
@@ -72,9 +75,8 @@ def evaluate_episode(env, agent, render: bool = False):
     total_reward = 0
     episode_length = 0
     wood_collected = 0
-    done = False
 
-    while not done:
+    for step in range(max_steps):
         # Select action (greedy for DQN, sample from policy for PPO)
         if hasattr(agent, 'select_action'):
             # PPO agent - returns (action, log_prob, value)
@@ -97,10 +99,14 @@ def evaluate_episode(env, agent, render: bool = False):
         if render:
             env.render()
 
+        # Reset environment if done (but continue for max_steps)
+        if done:
+            obs = env.reset()
+
     return total_reward, episode_length, wood_collected
 
 
-def evaluate(config: dict, checkpoint_path: str, num_episodes: int, render: bool):
+def evaluate(config: dict, checkpoint_path: str, num_episodes: int, render: bool, max_steps: int = None):
     """
     Evaluate a trained agent.
 
@@ -109,10 +115,16 @@ def evaluate(config: dict, checkpoint_path: str, num_episodes: int, render: bool
         checkpoint_path: Path to model checkpoint
         num_episodes: Number of episodes to evaluate
         render: Whether to render episodes
+        max_steps: Max steps per episode (if None, computed from config)
     """
     device = config['device']
     algorithm = config.get('algorithm', 'dqn')
 
+    # Compute max_steps from config if not provided
+    if max_steps is None:
+        episode_seconds = config.get('environment', {}).get('episode_seconds', 25)
+        max_steps = episode_seconds * 5  # 5 agent steps per second (4 frames per step at 20fps)
+    
     # Create environment
     env = create_env(config)
     num_actions = env.action_space.n
@@ -127,10 +139,11 @@ def evaluate(config: dict, checkpoint_path: str, num_episodes: int, render: bool
 
     print(f"\n{'='*60}")
     print(f"Evaluating {algorithm.upper()} for {num_episodes} episodes...")
+    print(f"Max steps per episode: {max_steps}")
     print(f"{'='*60}\n")
 
     for ep in range(num_episodes):
-        reward, length, wood = evaluate_episode(env, agent, render)
+        reward, length, wood = evaluate_episode(env, agent, max_steps, render)
         rewards.append(reward)
         lengths.append(length)
         wood_counts.append(wood)
@@ -173,6 +186,8 @@ def main():
                         help='Path to config file (default: config/config.yaml)')
     parser.add_argument('--episodes', type=int, default=10,
                         help='Number of evaluation episodes (default: 10)')
+    parser.add_argument('--max-steps', type=int, default=None,
+                        help='Max steps per episode (default: computed from config episode_seconds * 5)')
     parser.add_argument('--render', action='store_true',
                         help='Render episodes')
     args = parser.parse_args()
@@ -188,18 +203,25 @@ def main():
     # Override algorithm in config with command-line argument
     config['algorithm'] = args.algorithm
 
+    # Compute max_steps for display
+    max_steps = args.max_steps
+    if max_steps is None:
+        episode_seconds = config.get('environment', {}).get('episode_seconds', 25)
+        max_steps = episode_seconds * 5
+
     print("=" * 60)
     print("MineRL Tree-Chopping RL Evaluation")
     print("=" * 60)
     print(f"Algorithm:  {args.algorithm.upper()}")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Episodes:   {args.episodes}")
+    print(f"Max Steps:  {max_steps}")
     print(f"Render:     {args.render}")
     print(f"Device:     {config['device']}")
     print("=" * 60)
 
     # Run evaluation
-    evaluate(config, args.checkpoint, args.episodes, args.render)
+    evaluate(config, args.checkpoint, args.episodes, args.render, args.max_steps)
 
 
 if __name__ == "__main__":

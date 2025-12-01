@@ -156,6 +156,9 @@ class PPOAgent:
         batch_size: int = 64,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64,
         device: str = None
     ):
         """
@@ -175,6 +178,9 @@ class PPOAgent:
             batch_size: Minibatch size
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network
+            scalar_hidden_dim: Hidden dimension for scalar network
+            scalar_output_dim: Output dimension for scalar network
             device: Device to use ('cuda', 'mps', 'cpu', or None for auto)
         """
         # Device setup
@@ -194,7 +200,10 @@ class PPOAgent:
             input_channels=input_channels,
             num_scalars=num_scalars,
             cnn_architecture=cnn_architecture,
-            attention_type=attention_type
+            attention_type=attention_type,
+            use_scalar_network=use_scalar_network,
+            scalar_hidden_dim=scalar_hidden_dim,
+            scalar_output_dim=scalar_output_dim
         ).to(self.device)
         
         # Optimizer

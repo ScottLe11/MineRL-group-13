@@ -65,6 +65,7 @@ class DQNAgent:
         gamma: float = 0.99,
         tau: float = 0.005,
         target_update_method: str = "soft",
+        soft_update_freq: int = 1,
         hard_update_freq: int = 1000,
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.05,
@@ -79,6 +80,9 @@ class DQNAgent:
         per_beta_end: float = 1.0,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64,
         device: str = None
     ):
         """
@@ -90,7 +94,8 @@ class DQNAgent:
             gamma: Discount factor
             tau: Soft update coefficient (used when target_update_method="soft")
             target_update_method: "soft" (Polyak averaging) or "hard" (periodic copy)
-            hard_update_freq: Steps between hard updates (used when target_update_method="hard")
+            soft_update_freq: Train steps between soft updates (used when target_update_method="soft")
+            hard_update_freq: Train steps between hard updates (used when target_update_method="hard")
             epsilon_start: Initial exploration rate
             epsilon_end: Final exploration rate
             epsilon_decay_steps: Steps to decay epsilon
@@ -104,6 +109,9 @@ class DQNAgent:
             per_beta_end: Final importance sampling exponent
             cnn_architecture: CNN architecture name ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network
+            scalar_hidden_dim: Hidden dimension for scalar network
+            scalar_output_dim: Output dimension for scalar network
             device: 'cuda', 'mps', 'cpu', or None for auto-detect
         """
         # Device setup
@@ -123,14 +131,20 @@ class DQNAgent:
             input_channels,
             num_scalars,
             cnn_architecture=cnn_architecture,
-            attention_type=attention_type
+            attention_type=attention_type,
+            use_scalar_network=use_scalar_network,
+            scalar_hidden_dim=scalar_hidden_dim,
+            scalar_output_dim=scalar_output_dim
         ).to(self.device)
         self.target_network = DQNNetwork(
             num_actions,
             input_channels,
             num_scalars,
             cnn_architecture=cnn_architecture,
-            attention_type=attention_type
+            attention_type=attention_type,
+            use_scalar_network=use_scalar_network,
+            scalar_hidden_dim=scalar_hidden_dim,
+            scalar_output_dim=scalar_output_dim
         ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.target_network.eval()  # Target network is not trained
@@ -163,11 +177,13 @@ class DQNAgent:
 
         # Target update settings
         self.target_update_method = target_update_method.lower()
+        self.soft_update_freq = soft_update_freq
         self.hard_update_freq = hard_update_freq
         if self.target_update_method not in ("soft", "hard"):
             raise ValueError(f"target_update_method must be 'soft' or 'hard', got '{target_update_method}'")
         print(f"Target updates: {self.target_update_method}" +
-              (f" (tau={tau})" if self.target_update_method == "soft" else f" (every {hard_update_freq} steps)"))
+              (f" (tau={tau}, every {soft_update_freq} steps)" if self.target_update_method == "soft" 
+               else f" (every {hard_update_freq} steps)"))
 
         # Exploration
         self.epsilon_start = epsilon_start
@@ -321,7 +337,7 @@ class DQNAgent:
             self.replay_buffer.update_priorities(indices, priorities)
 
         # Update target network (soft or hard)
-        if self.target_update_method == "soft":
+        if self.target_update_method == "soft" and self.train_count % self.soft_update_freq == 0:
             self._soft_update()
         elif self.target_update_method == "hard" and self.train_count % self.hard_update_freq == 0:
             self._hard_update()

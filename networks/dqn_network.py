@@ -17,7 +17,7 @@ class DQNNetwork(nn.Module):
 
     Architecture:
         Visual Input (4, 84, 84) -> CNN -> [Attention] -> (cnn_dim,)
-        Scalar Input (3,) -> concat -> (cnn_dim + 3,)
+        Scalar Input (4,) -> concat -> (cnn_dim + 4,)
         Combined -> DuelingHead -> Q-values (num_actions,)
 
     Observation format expected:
@@ -25,7 +25,8 @@ class DQNNetwork(nn.Module):
             'pov': (batch, 4, 84, 84) uint8 or float,
             'time_left': (batch,) or (batch, 1) float,
             'yaw': (batch,) or (batch, 1) float,
-            'pitch': (batch,) or (batch, 1) float
+            'pitch': (batch,) or (batch, 1) float,
+            'place_table_safe': (batch,) or (batch, 1) float
         }
     """
 
@@ -44,7 +45,7 @@ class DQNNetwork(nn.Module):
         Args:
             num_actions: Number of discrete actions (default: 23)
             input_channels: Number of stacked frames (default: 4)
-            num_scalars: Number of scalar observations (default: 3 for time_left, yaw, pitch)
+            num_scalars: Number of scalar observations (default: 3, should be 4 for time_left, yaw, pitch, place_table_safe)
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
             use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
@@ -154,6 +155,8 @@ class DQNNetwork(nn.Module):
                 yaw = yaw.unsqueeze(1)
             if pitch.dim() == 1:
                 pitch = pitch.unsqueeze(1)
+            if place_table_safe.dim() == 1:
+                place_table_safe = place_table_safe.unsqueeze(1)
 
             scalars = torch.cat([time_left, yaw, pitch, place_table_safe], dim=1)  # (batch, 4)
 

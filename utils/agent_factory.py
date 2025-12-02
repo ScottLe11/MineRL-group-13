@@ -49,7 +49,7 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
     agent = DQNAgent(
         num_actions=num_actions,
         input_channels=network_config['input_channels'],
-        num_scalars=3,  # time_left, yaw, pitch
+        num_scalars=4,  # time_left, yaw, pitch, place_table_safe
         learning_rate=dqn_config['learning_rate'],
         gamma=dqn_config['gamma'],
         # Target update settings
@@ -114,7 +114,7 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
     agent = PPOAgent(
         num_actions=num_actions,
         input_channels=network_config['input_channels'],
-        num_scalars=3,  # time_left, yaw, pitch
+        num_scalars=4,  # time_left, yaw, pitch, place_table_safe
         learning_rate=ppo_config['learning_rate'],
         gamma=ppo_config['gamma'],
         gae_lambda=ppo_config['gae_lambda'],

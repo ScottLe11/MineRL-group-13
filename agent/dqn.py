@@ -414,6 +414,25 @@ class DQNAgent:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.step_count = checkpoint['step_count']
         self.train_count = checkpoint['train_count']
+
+        # Restore replay buffer if it exists in checkpoint
+        if 'replay_buffer' in checkpoint:
+            print("🔄 Restoring replay buffer from checkpoint...")
+            buffer_data = checkpoint['replay_buffer']
+
+            if hasattr(self.replay_buffer, 'buffer'):
+                # Regular ReplayBuffer
+                self.replay_buffer.buffer.extend(buffer_data)
+                self.replay_buffer.position = len(self.replay_buffer.buffer) % self.replay_buffer.capacity
+                print(f"✅ Restored {len(buffer_data)} experiences to replay buffer")
+            elif hasattr(self.replay_buffer, 'add_experience'):
+                # PrioritizedReplayBuffer
+                for exp in buffer_data:
+                    self.replay_buffer.add_experience(*exp)
+                print(f"✅ Restored {len(buffer_data)} experiences to prioritized replay buffer")
+        else:
+            print("ℹ️  No replay buffer in checkpoint")
+
         print(f"Agent loaded from {path}")
 
 

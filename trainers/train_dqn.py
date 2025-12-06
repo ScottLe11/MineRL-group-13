@@ -11,7 +11,36 @@ Common infrastructure (checkpointing, logging, env recreation) is in train.py.
 """
 
 import numpy as np
+import os
+import glob
 
+def cleanup_checkpoints(checkpoint_dir, algorithm, current_ep, keep_last=2):
+    """Keeps only the 'keep_last' most recent checkpoints. Preserves 'best_model'."""
+    pattern = os.path.join(checkpoint_dir, f"checkpoint_{algorithm}_ep*.pt")
+    files = glob.glob(pattern)
+    
+    def get_ep(f):
+        try:
+            return int(f.split('_ep')[-1].replace('.pt', ''))
+        except:
+            return 0
+    files.sort(key=get_ep)
+    
+    if len(files) > keep_last:
+        files_to_remove = files[:-keep_last]
+        for f in files_to_remove:
+            try:
+                os.remove(f)
+            except OSError as e:
+                print(f"Error deleting {f}: {e}")
+
+def get_latest_best_model(checkpoint_dir, algorithm):
+    """Finds the existing best model to track it for deletion."""
+    pattern = os.path.join(checkpoint_dir, f"best_model_{algorithm}_ep*.pt")
+    files = glob.glob(pattern)
+    if not files: return None
+    files.sort(key=os.path.getctime) 
+    return files[-1]
 
 def train_dqn(config: dict, env, agent, logger, render: bool = False):
     """
@@ -35,6 +64,8 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
     log_freq = config['training']['log_freq']
     save_freq = config['training']['save_freq']
     env_recreation_interval = config['training'].get('env_recreation_interval', 50)
+    checkpoint_dir = config['training']['checkpoint_dir']
+    algorithm = 'dqn'
 
     # Episode settings
     env_config = config['environment']
@@ -42,15 +73,28 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
     max_steps_per_episode = episode_seconds * 5
 
     # Training state
-    global_step = 0
+    global_step = agent.step_count
     best_avg_wood = 0
-    recent_wood = []  # Track last 50 episodes
+    recent_wood = [] # Track last 50 episodes
+    
+    last_best_model_path = get_latest_best_model(checkpoint_dir, algorithm)
 
-    # Main training loop
-    for episode in range(1, num_episodes + 1):
-        # Periodically recreate environment to prevent memory leaks
-        if episode > 1 and episode % env_recreation_interval == 0:
-            print(f"\n🔄 Recreating environment at episode {episode} (prevent memory leaks)...")
+    # Calculate Start Episode
+    if hasattr(agent, 'episode_count') and agent.episode_count > 0:
+        start_episode = agent.episode_count + 1
+    else:
+        start_episode = (global_step // max_steps_per_episode) + 1
+
+    print(f"Starting/Resuming from Episode {start_episode}")
+
+    for episode in range(start_episode, num_episodes + 1):
+        if hasattr(agent, 'episode_count'):
+            agent.episode_count = episode
+
+        # Main training loop
+        if episode > 1 and (episode - 1) % env_recreation_interval == 0:
+            # Periodically recreate environment to prevent memory leaks
+            print(f"\n🔄 Recreating environment at episode {episode}...")
             env.close()
             from utils.env_factory import create_env
             env = create_env(config)
@@ -77,13 +121,13 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
                 done = True  # Force episode termination
                 # Don't store this experience - it's corrupted
 
-            if render:
+            if render: 
                 env.render()
 
-            if done and 'error' in info:
+            if done and 'error' in info: 
                 # Skip storing corrupted experience, just break
                 break
-
+            
             # DQN-SPECIFIC: Store experience in replay buffer
             state = {
                 'pov': obs['pov'],
@@ -132,7 +176,7 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
 
         # Track wood for success rate
         recent_wood.append(episode_wood)
-        if len(recent_wood) > 50:
+        if len(recent_wood) > 50: 
             recent_wood.pop(0)
 
         # Log episode
@@ -146,19 +190,29 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
         # Console logging (uses common function)
         log_episode_stats(episode, num_episodes, global_step, episode_wood,
                          recent_wood, agent, env, obs, log_freq)
-
+        
         # Save checkpoint (uses common function)
         if episode % save_freq == 0:
-            save_checkpoint(agent, config, episode)
+            save_path = os.path.join(checkpoint_dir, f"checkpoint_{algorithm}_ep{episode}.pt")
+            agent.save(save_path)
 
-            # Save best model
             avg_wood = np.mean(recent_wood) if recent_wood else 0
             if avg_wood > best_avg_wood:
                 best_avg_wood = avg_wood
-                save_checkpoint(agent, config, episode, best=True)
+                
+                # Delete previous best
+                if last_best_model_path and os.path.exists(last_best_model_path):
+                    try:
+                        os.remove(last_best_model_path)
+                    except OSError as e:
+                        print(f"Error removing previous best: {e}")
 
-    # Final save
-    save_checkpoint(agent, config, num_episodes, final=True)
+                # Save new best
+                best_path = os.path.join(checkpoint_dir, f"best_model_{algorithm}_ep{episode}.pt")
+                agent.save(best_path)
+                last_best_model_path = best_path 
+
+            cleanup_checkpoints(checkpoint_dir, algorithm, episode, keep_last=2)
 
     print(f"\n{'='*60}")
     print(f"TRAINING COMPLETE")
@@ -167,5 +221,5 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
     print(f"Total steps: {global_step}")
     print(f"Best avg wood (50 ep): {best_avg_wood:.2f}")
     print(f"{'='*60}")
-
+    
     return env

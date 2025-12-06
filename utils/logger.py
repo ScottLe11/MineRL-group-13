@@ -75,7 +75,7 @@ class Logger:
             self.writer.add_scalars(main_tag, tag_scalar_dict, step)
     
     def log_episode(self, episode_reward: float, episode_length: int, 
-                    wood_collected: int = 0, epsilon: float = None):
+                    wood_collected: int = 0, epsilon: float = None, episode_num: int = None):
         """
         Log end-of-episode metrics.
         
@@ -84,8 +84,12 @@ class Logger:
             episode_length: Number of steps in episode.
             wood_collected: Amount of wood collected.
             epsilon: Current exploration rate.
+            episode_num: Explicit episode number.
         """
-        self.episode += 1
+        if episode_num is not None:
+            self.episode = episode_num
+        else:
+            self.episode += 1
         
         self.log_scalar("episode/reward", episode_reward, self.episode)
         self.log_scalar("episode/length", episode_length, self.episode)
@@ -170,4 +174,3 @@ if __name__ == "__main__":
     if os.path.exists("test_runs"):
         shutil.rmtree("test_runs")
         print("  (Cleaned up test directory)")
-

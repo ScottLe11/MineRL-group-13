@@ -26,6 +26,8 @@ import random
 import numpy as np
 import time
 import socket
+import glob
+import traceback
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,7 +41,6 @@ from utils.env_factory import create_env
 from utils.agent_factory import create_agent
 from trainers.helpers import print_config_summary
 
-
 def set_seed(seed: int):
     """Set random seeds for reproducibility."""
     if seed is not None:
@@ -49,6 +50,13 @@ def set_seed(seed: int):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
 
+def get_sorted_checkpoints(checkpoint_dir, algorithm):
+    """Returns a list of checkpoint paths sorted by modification time."""
+    pattern = os.path.join(checkpoint_dir, f"checkpoint_{algorithm}_ep*.pt")
+    files = glob.glob(pattern)
+    if not files: return []
+    files.sort(key=os.path.getctime, reverse=True)
+    return files
 
 def train(config: dict, render: bool = False, resume_checkpoint: str = None):
     """
@@ -80,9 +88,9 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
 
         # Try to load from bc_dqn or dqfd checkpoints (in order of preference)
         checkpoint_paths = [
-            os.path.join(checkpoint_dir, "final_model_dqfd.pt"),    # Prefer DQfD (multi-objective)
-            os.path.join(checkpoint_dir, "final_model_bc_dqn.pt"),  # Then BC-DQN (simple)
-            os.path.join(checkpoint_dir, "final_model_bc.pt"),      # Legacy name
+            os.path.join(checkpoint_dir, "final_model_dqfd.pt"),   # Prefer DQfD (multi-objective)
+            os.path.join(checkpoint_dir, "final_model_bc_dqn.pt"), # Then BC-DQN (simple)
+            os.path.join(checkpoint_dir, "final_model_bc.pt"),     # Legacy name
         ]
 
         loaded = False
@@ -96,29 +104,28 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
                 # Load Q-Network weights from checkpoint
                 if 'q_network_state_dict' in checkpoint:
                      # Load weights into the online Q-Network
-                     agent.q_network.load_state_dict(checkpoint['q_network_state_dict'])
-
+                     agent.q_network.load_state_dict(checkpoint['q_network_state_dict'], strict=False)
+                     
                      # Initialize target network with pre-trained weights too
-                     agent.target_network.load_state_dict(checkpoint['q_network_state_dict'])
-
-                     print("✅ Successfully loaded weights into Q-Network and Target Network.")
+                     agent.target_network.load_state_dict(checkpoint['q_network_state_dict'], strict=False)
+                     
+                     print("✅ Successfully loaded weights into Q-Network.")
 
                      # Load replay buffer if it exists (from bc_dqn with buffer pre-filling)
                      if 'replay_buffer' in checkpoint:
                          print("🔄 Restoring replay buffer with expert demonstrations...")
                          buffer_data = checkpoint['replay_buffer']
-
+                        
                          # Restore buffer experiences
                          if hasattr(agent.replay_buffer, 'buffer'):
                              # Regular ReplayBuffer
                              agent.replay_buffer.buffer.extend(buffer_data)
                              agent.replay_buffer.position = len(agent.replay_buffer.buffer) % agent.replay_buffer.capacity
-                             print(f"✅ Restored {len(buffer_data)} expert transitions to replay buffer")
                          elif hasattr(agent.replay_buffer, 'add_experience'):
                              # PrioritizedReplayBuffer
                              for exp in buffer_data:
                                  agent.replay_buffer.add_experience(*exp)
-                             print(f"✅ Restored {len(buffer_data)} expert transitions to prioritized replay buffer")
+                         print(f"✅ Restored {len(buffer_data)} expert transitions.")
                      else:
                          print("ℹ️  No replay buffer in checkpoint (normal for older bc_dqn)")
 
@@ -129,7 +136,7 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
 
         if not loaded:
              print("⚠️  Info: No pre-trained checkpoint found. Starting DQN from scratch.")
-
+    
     # Load checkpoint if resuming (overrides BC weights)
     if resume_checkpoint:
         if not os.path.exists(resume_checkpoint):
@@ -137,6 +144,7 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
         print(f"\n🔄 Resuming from checkpoint: {resume_checkpoint}")
         agent.load(resume_checkpoint)
         print("✅ Checkpoint loaded successfully\n")
+
 
     # Create logger
     logger = Logger(
@@ -173,7 +181,6 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
     logger.close()
     env.close()
 
-
 def main():
     parser = argparse.ArgumentParser(description="Train MineRL Tree-Chopping RL Agent")
     parser.add_argument('--config', type=str, default=None,
@@ -183,9 +190,11 @@ def main():
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint to resume training from')
     args = parser.parse_args()
-
+    
     # Load config
     config = load_config(args.config)
+    algorithm = config.get('algorithm', 'dqn')
+    checkpoint_dir = config['training']['checkpoint_dir']
 
     print("=" * 60)
     print("MineRL Tree-Chopping RL Training")
@@ -199,10 +208,62 @@ def main():
     if args.resume:
         print(f"Resume: {args.resume}")
     print("=" * 60)
+    
+    failure_counts = {}
+    
+    candidate_checkpoint = args.resume 
 
-    # Train
-    train(config, render=args.render, resume_checkpoint=args.resume)
+    while True:
+        try:
+            train(config, render=args.render, resume_checkpoint=candidate_checkpoint)
+            print("\nTraining finished successfully.")
+            break 
 
+        except KeyboardInterrupt:
+            print("\nTraining interrupted by user. Exiting.")
+            sys.exit(0)
+            
+        except Exception as e:
+            # 2. CRASH HANDLING
+            print("\nCRASH DETECTED. Printing traceback:")
+            traceback.print_exc()
+
+            if "comms.py" in str(e) and "recvall" in str(e):
+                print("Fatal MineRL Comms Error. Exiting.")
+                sys.exit(1)
+
+            if candidate_checkpoint:
+                current_fails = failure_counts.get(candidate_checkpoint, 0)
+                failure_counts[candidate_checkpoint] = current_fails + 1
+            
+            print("\nWaiting 5 seconds before Auto-Resume Strategy...")
+            time.sleep(5)
+            
+            checkpoints = get_sorted_checkpoints(checkpoint_dir, algorithm)
+            
+            if not checkpoints:
+                print("No checkpoints found to resume from. Retrying fresh start...")
+                candidate_checkpoint = None
+            else:
+                latest = checkpoints[0]
+                
+                if failure_counts.get(latest, 0) < 5:
+                    candidate_checkpoint = latest
+                    attempt_num = failure_counts.get(latest, 0) + 1
+                    print(f"Auto-Resuming LATEST checkpoint ({attempt_num}/5): {os.path.basename(latest)}")
+                
+                elif len(checkpoints) > 1:
+                    second_latest = checkpoints[1]
+                    if failure_counts.get(second_latest, 0) < 10:
+                        candidate_checkpoint = second_latest
+                        attempt_num = failure_counts.get(second_latest, 0) + 1
+                        print(f"Latest failed 5x. Fallback to 2nd LATEST ({attempt_num}/10): {os.path.basename(second_latest)}")
+                    else:
+                        print("\nCRITICAL FAILURE: Backups exhausted. Exiting.")
+                        sys.exit(1)
+                else:
+                    print("\nCRITICAL FAILURE: Latest checkpoint failed 5 times and no older checkpoint exists.")
+                    sys.exit(1)
 
 if __name__ == "__main__":
     main()

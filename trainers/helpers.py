@@ -201,7 +201,7 @@ def log_episode_stats(episode: int, num_episodes: int, global_step: int,
     if hasattr(agent, 'get_action_stats'):
         stats = agent.get_action_stats()
         if stats:
-            print(f"  [Action Stats] Last 100: {stats['last_100_unique']}/{len(stats['last_100_actions'])} unique")
+            print(f"  [Action Stats] Last {agent.num_actions}: {stats['last_100_unique']}/{agent.num_actions} unique")
 
             # Print top 3 most frequent actions WITH NAMES
             top_actions = sorted(enumerate(stats['action_frequencies']), key=lambda x: x[1], reverse=True)[:3]

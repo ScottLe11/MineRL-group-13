@@ -194,6 +194,9 @@ class PPOAgent:
         self.device = torch.device(device)
         print(f"PPOAgent using device: {self.device}")
 
+        # Store LR for resume logic
+        self.learning_rate = learning_rate
+
         # Network (now with configurable architecture!)
         self.policy = ActorCriticNetwork(
             num_actions=num_actions,
@@ -226,6 +229,7 @@ class PPOAgent:
         # Counters
         self.step_count = 0
         self.update_count = 0
+        self.episode_count = 0 # New: Track episodes
 
         # Action frequency tracking (for debugging)
         self.action_counts = [0] * num_actions
@@ -248,7 +252,8 @@ class PPOAgent:
         action_int = action.item()
 
         # Track action frequency (for debugging)
-        self.action_counts[action_int] += 1
+        if action_int < len(self.action_counts):
+            self.action_counts[action_int] += 1
         self.last_actions.append(action_int)
         if len(self.last_actions) > 100:  # Keep last 100
             self.last_actions.pop(0)
@@ -311,8 +316,8 @@ class PPOAgent:
                 'top_actions': sorted(enumerate(probs_np), key=lambda x: x[1], reverse=True)[:5]
             }
 
-    def store_transition(self, state: dict, action: int, log_prob: float,
-                        reward: float, value: float, done: bool):
+    def store_transition(self, state: dict, action: int, log_prob: float, 
+                         reward: float, value: float, done: bool):
         """Store transition in rollout buffer."""
         self.buffer.add(state, action, log_prob, reward, value, done)
         self.step_count += 1
@@ -418,22 +423,74 @@ class PPOAgent:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
             'update_count': self.update_count,
+            'episode_count': self.episode_count,
             'action_counts': self.action_counts,
             'last_actions': self.last_actions,
         }, path)
         print(f"PPO agent saved to {path}")
     
     def load(self, path: str):
-        """Load agent state."""
+        """Load agent state with robust action mismatch handling and hyperparam override."""
         checkpoint = torch.load(path, map_location=self.device)
-        self.policy.load_state_dict(checkpoint['policy_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # 1. Load Policy with Shape Checking (Action space change handling)
+        saved_state = checkpoint['policy_state_dict']
+        current_state = self.policy.state_dict()
+        new_state = {}
+        
+        mismatch_detected = False
+        for k, v in current_state.items():
+            if k in saved_state:
+                saved_v = saved_state[k]
+                if saved_v.shape != v.shape:
+                    mismatch_detected = True
+                    print(f"⚠️  Shape mismatch for {k}: saved {saved_v.shape}, current {v.shape}")
+                    
+                    # Safe slice/pad
+                    min_dim = min(saved_v.shape[0], v.shape[0])
+                    
+                    if len(v.shape) == 1:
+                        v[:min_dim] = saved_v[:min_dim]
+                    elif len(v.shape) >= 2:
+                         v[:min_dim, ...] = saved_v[:min_dim, ...]
+                         
+                    new_state[k] = v
+                else:
+                    new_state[k] = saved_v
+            else:
+                new_state[k] = v
+        
+        self.policy.load_state_dict(new_state)
+        
+        if mismatch_detected:
+            print("✅ Handled action space mismatch by preserving matching weights.")
+
+        # 2. Load Optimizer (Reset if failure, force LR)
+        if 'optimizer_state_dict' in checkpoint:
+            try:
+                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                
+                # FORCE update learning rate
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
+                print(f"Optimizer loaded")
+            except Exception as e:
+                print(f"Optimizer load failed (likely shape change), resetting optimizer: {e}")
+                self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learning_rate)
+
+        # 3. Counters
         self.step_count = checkpoint['step_count']
         self.update_count = checkpoint['update_count']
-        # Load action tracking if available (backwards compatible)
-        self.action_counts = checkpoint.get('action_counts', [0] * self.num_actions)
+        self.episode_count = checkpoint.get('episode_count', 0)
+        
+        # Load action tracking if available 
+        saved_counts = checkpoint.get('action_counts', [])
+        if len(saved_counts) == self.num_actions:
+            self.action_counts = saved_counts
+        else:
+            self.action_counts = [0] * self.num_actions # Reset if size changed
+
         self.last_actions = checkpoint.get('last_actions', [])
-        print(f"PPO agent loaded from {path}")
 
 
 if __name__ == "__main__":
@@ -480,4 +537,3 @@ if __name__ == "__main__":
     print(f"  Entropy: {metrics['entropy']:.4f}")
     
     print("\n✅ PPOAgent validated!")
-

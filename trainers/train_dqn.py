@@ -184,7 +184,8 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
             episode_reward=episode_reward,
             episode_length=step_in_episode,
             wood_collected=episode_wood,
-            epsilon=agent.get_epsilon()
+            epsilon=agent.get_epsilon(),
+            episode_num=episode
         )
 
         # Console logging (uses common function)

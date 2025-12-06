@@ -188,7 +188,8 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
             episode_reward=episode_reward,
             episode_length=step_in_episode,
             wood_collected=episode_wood,
-            epsilon=0.0  # PPO doesn't use epsilon
+            epsilon=0.0,  # PPO doesn't use epsilon
+            episode_num=episode
         )
 
         # Console logging (uses common function)

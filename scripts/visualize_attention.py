@@ -16,9 +16,9 @@ import numpy as np
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config import load_config
+from utils.config_loader import load_config
 from utils.env_factory import create_env
-from utils.agent_factory import create_agent
+from agent.factory import create_agent
 from utils.visualization import AttentionVisualizer
 
 
@@ -120,17 +120,16 @@ def visualize_checkpoint_attention(
         step = 0
 
         while step < num_steps:
-            # Prepare observation - only include keys needed by network
-            network_keys = ['pov', 'time_left', 'yaw', 'pitch', 'place_table_safe']
+            # Prepare observation
             if not isinstance(obs['pov'], torch.Tensor):
                 obs_tensor = {
-                    k: torch.tensor(obs[k]).unsqueeze(0).to(config['device'])
-                    for k in network_keys if k in obs
+                    k: torch.tensor(v).unsqueeze(0).to(config['device'])
+                    for k, v in obs.items()
                 }
             else:
                 obs_tensor = {
-                    k: obs[k].unsqueeze(0).to(config['device']) if obs[k].dim() <= 1 else obs[k].to(config['device'])
-                    for k in network_keys if k in obs
+                    k: v.unsqueeze(0).to(config['device']) if v.dim() <= 1 else v.to(config['device'])
+                    for k, v in obs.items()
                 }
 
             # Forward pass with attention

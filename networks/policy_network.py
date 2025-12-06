@@ -171,26 +171,13 @@ class ActorCriticNetwork(nn.Module):
             # No attention, use CNN directly
             cnn_features = self.cnn(pov)  # (batch, cnn_output_dim)
 
-        # Concatenate scalar features (handle optional scalars gracefully)
-        batch_size = pov.size(0)
-        device = pov.device
-        
-        time_left = obs.get('time_left', torch.zeros(batch_size, device=device))
-        yaw = obs.get('yaw', torch.zeros(batch_size, device=device))
-        pitch = obs.get('pitch', torch.zeros(batch_size, device=device))
-        place_table_safe = obs.get('place_table_safe', torch.zeros(batch_size, device=device))
-        
-        # Ensure scalars are (batch,) for stacking
-        if time_left.dim() > 1:
-            time_left = time_left.view(-1)
-        if yaw.dim() > 1:
-            yaw = yaw.view(-1)
-        if pitch.dim() > 1:
-            pitch = pitch.view(-1)
-        if place_table_safe.dim() > 1:
-            place_table_safe = place_table_safe.view(-1)
-        
-        scalars = torch.stack([time_left, yaw, pitch, place_table_safe], dim=1)  # (batch, 4)
+        # Concatenate scalar features
+        scalars = torch.stack([
+            obs['time_left'].view(-1),
+            obs['yaw'].view(-1),
+            obs['pitch'].view(-1),
+            obs['place_table_safe'].view(-1)
+        ], dim=1)  # (batch, num_scalars)
 
         # Process scalars (optionally through scalar network)
         if self.scalar_network is not None:
@@ -253,7 +240,6 @@ if __name__ == "__main__":
         'time_left': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([0.0, 0.5]),
         'pitch': torch.tensor([0.0, -0.2]),
-        'place_table_safe': torch.tensor([1.0, 0.0]),
     }
     
     logits, value = network(obs)

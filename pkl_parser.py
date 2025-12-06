@@ -1,9 +1,29 @@
+"""
+PKL Parser - Extract BC Training Data from Recorded Trajectories
+
+Supports TWO recording formats:
+
+1. **NEW - Discrete Action Recording** (recorder_gameplay_discrete.py):
+   - Actions are already discrete indices (0-25)
+   - Parser directly extracts indices - NO discretization needed!
+   - Simpler, no information loss
+
+2. **LEGACY - Dictionary Action Recording** (recorder_gameplay.py):
+   - Actions are MineRL dictionaries (compound actions)
+   - Parser uses priority-based discretization logic
+   - More complex, may lose compound action information
+
+The extract_bc_data() function automatically detects the format:
+- If action is int → Use directly (new format)
+- If action is dict → Apply discretization logic (legacy format)
+"""
+
 import numpy as np
 import pickle
 import os
 from collections import OrderedDict
 
-# Full pool action indices (from wrappers/actions.py)
+# Full pool action indices (from wrappers/discrete_actions.py)
 FULL_ACTION_POOL = {
     'noop': 0, 'forward': 1, 'back': 2, 'right': 3, 'left': 4, 'jump': 5, 'attack': 6,
     'turn_left_30': 7, 'turn_left_45': 8, 'turn_left_60': 9, 'turn_left_90': 10,
@@ -178,13 +198,24 @@ def extract_bc_data(raw_transitions, config: dict):
 
             # 4. Extract Action/Reward/Done
             raw_action = transition['action']
-            if not isinstance(raw_action, dict):
-                 # This should ideally not happen if recording was done correctly
-                 print(f"[WARNING] Skipping record at index {i}. Action is not a dictionary.")
-                 continue
-            # We assume the action is already a discrete index (0-22)
-            # If recorder saves dict, the mapping logic should be here.
-            discrete_action_mapped_index = discretize(raw_action)
+
+            # NEW: Check if action is already a discrete index (from discrete recorder)
+            if isinstance(raw_action, (int, np.integer)):
+                # Direct discrete action index - no conversion needed!
+                # Map from original index (0-25) to enabled action index (0-N-1)
+                if raw_action in enabled_actions:
+                    # Map original index to position in enabled_actions list
+                    discrete_action_mapped_index = enabled_actions.index(raw_action)
+                else:
+                    print(f"[WARNING] Skipping record at index {i}. Action index {raw_action} not in enabled_actions.")
+                    continue
+            elif isinstance(raw_action, dict):
+                # Legacy format: MineRL action dictionary - use discretization logic
+                discrete_action_mapped_index = discretize(raw_action)
+            else:
+                print(f"[WARNING] Skipping record at index {i}. Action is neither int nor dict: {type(raw_action)}")
+                continue
+
             action_list.append(discrete_action_mapped_index)
             reward_list.append(transition['reward'])
             

@@ -101,7 +101,7 @@ action_space:
   # Custom action list (only used if preset is "custom")
   # Example: [0, 1, 2, 6, 7, 8, 23] would include only noop, forward, back,
   #          attack, turn_left_30, turn_left_45, and craft_entire_axe
-  enabled_actions: [1, 8, 12, 15, 17, 25]
+  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 15, 17, 19, 20, 21, 22]
 
 # =============================================================================
 # DQN AGENT
@@ -150,7 +150,7 @@ training:
   # Training duration (in EPISODES, not steps)
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
-  num_episodes: 500                  # Total episodes to train
+  num_episodes: 2100                  # Total episodes to train
   train_freq: 5                      # Train every N agent steps
   
   # Logging & Saving (in episodes)
@@ -176,15 +176,15 @@ training:
 # PPO (Alternative to DQN)
 # =============================================================================
 ppo:
-  learning_rate: 0.0005              # Typically higher than DQN
+  learning_rate: 0.0001              # Typically higher than DQN
   gamma: 0.99                        # Discount factor
   gae_lambda: 0.95                   # GAE lambda
   clip_epsilon: 0.2                  # PPO clipping parameter
-  entropy_coef: 0.1                 # Entropy bonus
+  entropy_coef: 0.0                 # Entropy bonus
   value_coef: 0.5                    # Value loss coefficient
   max_grad_norm: 0.5                 # Gradient clipping
-  n_steps: 512                      # Steps per rollout
-  n_epochs: 4                       # Epochs per update
+  n_steps: 1024                      # Steps per rollout
+  n_epochs: 6                       # Epochs per update
   batch_size: 64                     # Minibatch size
 
 # =============================================================================
@@ -199,7 +199,7 @@ ppo:
 #               → Same agent as 'ppo', different training
 #   - "dqfd": Deep Q-Learning from Demonstrations (advanced: multi-objective loss)
 #             → Same agent as 'dqn', different training (supervised + TD + margin + L2)
-algorithm: "dqn"
+algorithm: "ppo"
 
 # =============================================================================
 # REWARD (Wood Inventory-Based)

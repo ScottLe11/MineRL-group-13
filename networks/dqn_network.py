@@ -8,6 +8,7 @@ import torch.nn as nn
 from .cnn import create_cnn
 from .attention import create_attention
 from .dueling_head import DuelingHead
+from .scalar_network import ScalarNetwork
 
 
 class DQNNetwork(nn.Module):
@@ -16,7 +17,7 @@ class DQNNetwork(nn.Module):
 
     Architecture:
         Visual Input (4, 84, 84) -> CNN -> [Attention] -> (cnn_dim,)
-        Scalar Input (3,) -> concat -> (cnn_dim + 3,)
+        Scalar Input (4,) -> concat -> (cnn_dim + 4,)
         Combined -> DuelingHead -> Q-values (num_actions,)
 
     Observation format expected:
@@ -24,7 +25,8 @@ class DQNNetwork(nn.Module):
             'pov': (batch, 4, 84, 84) uint8 or float,
             'time_left': (batch,) or (batch, 1) float,
             'yaw': (batch,) or (batch, 1) float,
-            'pitch': (batch,) or (batch, 1) float
+            'pitch': (batch,) or (batch, 1) float,
+            'place_table_safe': (batch,) or (batch, 1) float
         }
     """
 
@@ -34,15 +36,21 @@ class DQNNetwork(nn.Module):
         input_channels: int = 4,
         num_scalars: int = 3,
         cnn_architecture: str = 'small',
-        attention_type: str = 'none'
+        attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64
     ):
         """
         Args:
             num_actions: Number of discrete actions (default: 23)
             input_channels: Number of stacked frames (default: 4)
-            num_scalars: Number of scalar observations (default: 3 for time_left, yaw, pitch)
+            num_scalars: Number of scalar observations (default: 3, should be 4 for time_left, yaw, pitch, place_table_safe)
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
+            scalar_hidden_dim: Hidden dimension for scalar network (default: 64)
+            scalar_output_dim: Output dimension for scalar network (default: 64)
         """
         super().__init__()
 
@@ -50,6 +58,7 @@ class DQNNetwork(nn.Module):
         self.num_scalars = num_scalars
         self.cnn_architecture = cnn_architecture
         self.attention_type = attention_type
+        self.use_scalar_network = use_scalar_network
 
         # CNN for visual features (configurable architecture)
         self.cnn = create_cnn(cnn_architecture, input_channels=input_channels)
@@ -91,22 +100,36 @@ class DQNNetwork(nn.Module):
         else:
             self.attention = nn.Identity()
 
+        # Optional scalar network for processing non-visual features
+        if use_scalar_network:
+            self.scalar_network = ScalarNetwork(
+                num_scalars=num_scalars,
+                hidden_dim=scalar_hidden_dim,
+                output_dim=scalar_output_dim
+            )
+            scalar_dim = scalar_output_dim
+        else:
+            self.scalar_network = None
+            scalar_dim = num_scalars
+
         # Combined feature dimension
-        combined_dim = cnn_output_dim + num_scalars
+        combined_dim = cnn_output_dim + scalar_dim
 
         # Dueling head
         self.head = DuelingHead(input_dim=combined_dim, num_actions=num_actions)
     
-    def forward(self, obs: dict) -> torch.Tensor:
+    def forward(self, obs: dict, return_attention: bool = False):
         """
         Forward pass through the network.
 
         Args:
             obs: Dictionary with keys 'pov', 'time_left', 'yaw', 'pitch'
                  OR a tensor for pov only (for simple testing)
+            return_attention: If True, return attention maps (only if attention is enabled)
 
         Returns:
             q_values: (batch, num_actions) tensor
+            attention_map: (batch, 1, H, W) tensor (only if return_attention=True and attention enabled)
         """
         if isinstance(obs, torch.Tensor):
             # Simple case: just pov tensor, no scalars
@@ -132,7 +155,6 @@ class DQNNetwork(nn.Module):
                 yaw = yaw.unsqueeze(1)
             if pitch.dim() == 1:
                 pitch = pitch.unsqueeze(1)
-                
             if place_table_safe.dim() == 1:
                 place_table_safe = place_table_safe.unsqueeze(1)
 
@@ -140,6 +162,7 @@ class DQNNetwork(nn.Module):
 
         # Extract visual features
         # If using attention, apply it to conv features before FC layer
+        attention_map = None
         if self.use_attention and hasattr(self.cnn, 'conv') and hasattr(self.cnn, 'fc'):
             # Normalize input
             if pov.max() > 1.0:
@@ -149,7 +172,7 @@ class DQNNetwork(nn.Module):
             conv_features = self.cnn.conv(pov)  # (batch, channels, H, W)
 
             # Apply attention
-            attended_features, _ = self.attention(conv_features)  # (batch, channels, H, W)
+            attended_features, attention_map = self.attention(conv_features)  # (batch, channels, H, W), (batch, 1, H, W)
 
             # Flatten and pass through FC
             attended_features = attended_features.view(attended_features.size(0), -1)
@@ -158,13 +181,22 @@ class DQNNetwork(nn.Module):
             # Standard forward pass (no attention)
             visual_features = self.cnn(pov)  # (batch, cnn_output_dim)
 
-        # Concatenate with scalars
-        combined = torch.cat([visual_features, scalars], dim=1)  # (batch, cnn_dim + 3)
+        # Process scalars (optionally through scalar network)
+        if self.scalar_network is not None:
+            scalar_features = self.scalar_network(scalars)  # (batch, scalar_output_dim)
+        else:
+            scalar_features = scalars  # (batch, num_scalars)
+
+        # Concatenate visual and scalar features
+        combined = torch.cat([visual_features, scalar_features], dim=1)  # (batch, cnn_dim + scalar_dim)
 
         # Compute Q-values
         q_values = self.head(combined)  # (batch, num_actions)
 
-        return q_values
+        if return_attention and attention_map is not None:
+            return q_values, attention_map
+        else:
+            return q_values
     
     def get_action(self, obs: dict, epsilon: float = 0.0) -> int:
         """

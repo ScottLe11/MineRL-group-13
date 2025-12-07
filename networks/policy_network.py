@@ -12,6 +12,7 @@ from torch.distributions import Categorical
 
 from .cnn import create_cnn
 from .attention import create_attention
+from .scalar_network import ScalarNetwork
 
 
 class ActorCriticNetwork(nn.Module):
@@ -32,19 +33,25 @@ class ActorCriticNetwork(nn.Module):
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 3,
+        num_scalars: int = 4,
         hidden_size: int = 512,
         cnn_architecture: str = 'small',
-        attention_type: str = 'none'
+        attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64
     ):
         """
         Args:
             num_actions: Number of discrete actions
             input_channels: Number of stacked frames (default 4)
-            num_scalars: Number of scalar observations (time_left, yaw, pitch)
+            num_scalars: Number of scalar observations (time_left, yaw, pitch, place_table_safe)
             hidden_size: Size of hidden layers
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
+            scalar_hidden_dim: Hidden dimension for scalar network (default: 64)
+            scalar_output_dim: Output dimension for scalar network (default: 64)
         """
         super().__init__()
 
@@ -52,6 +59,7 @@ class ActorCriticNetwork(nn.Module):
         self.num_scalars = num_scalars
         self.cnn_architecture = cnn_architecture
         self.attention_type = attention_type
+        self.use_scalar_network = use_scalar_network
 
         # Shared CNN backbone (configurable architecture!)
         self.cnn = create_cnn(cnn_architecture, input_channels=input_channels)
@@ -89,16 +97,28 @@ class ActorCriticNetwork(nn.Module):
         else:
             self.attention = nn.Identity()
 
+        # Optional scalar network for processing non-visual features
+        if use_scalar_network:
+            self.scalar_network = ScalarNetwork(
+                num_scalars=num_scalars,
+                hidden_dim=scalar_hidden_dim,
+                output_dim=scalar_output_dim
+            )
+            scalar_dim = scalar_output_dim
+        else:
+            self.scalar_network = None
+            scalar_dim = num_scalars
+
         # Feature dimension after CNN + scalars
-        self.feature_dim = cnn_output_dim + num_scalars
-        
+        self.feature_dim = cnn_output_dim + scalar_dim
+
         # Actor head (policy): outputs action logits
         self.actor = nn.Sequential(
             nn.Linear(self.feature_dim, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, num_actions)
         )
-        
+
         # Critic head (value): outputs state value
         self.critic = nn.Sequential(
             nn.Linear(self.feature_dim, hidden_size),
@@ -117,15 +137,18 @@ class ActorCriticNetwork(nn.Module):
                     nn.init.orthogonal_(layer.weight, gain=0.01)
                     nn.init.constant_(layer.bias, 0)
     
-    def forward(self, obs: dict) -> tuple:
+    def forward(self, obs: dict, return_attention: bool = False):
         """
         Forward pass returning policy logits and value.
 
         Args:
             obs: Dict with 'pov', 'time_left', 'yaw', 'pitch' tensors
+            return_attention: If True, return attention maps (only if attention is enabled)
 
         Returns:
-            (action_logits, value): Tuple of policy logits and state value
+            action_logits: (batch, num_actions) tensor
+            value: (batch,) tensor
+            attention_map: (batch, 1, H, W) tensor (only if return_attention=True and attention enabled)
         """
         # Process visual observation
         pov = obs['pov']
@@ -133,12 +156,13 @@ class ActorCriticNetwork(nn.Module):
             pov = pov.float() / 255.0  # Normalize to [0, 1]
 
         # Extract visual features (with attention if enabled)
+        attention_map = None
         if self.use_attention and hasattr(self.cnn, 'conv') and hasattr(self.cnn, 'fc'):
             # Conv features
             conv_features = self.cnn.conv(pov)  # (batch, channels, H, W)
 
             # Apply attention
-            attended_features, _ = self.attention(conv_features)  # (batch, channels, H, W)
+            attended_features, attention_map = self.attention(conv_features)  # (batch, channels, H, W), (batch, 1, H, W)
 
             # Flatten and FC layer
             flattened = attended_features.view(attended_features.size(0), -1)
@@ -155,13 +179,23 @@ class ActorCriticNetwork(nn.Module):
             obs['place_table_safe'].view(-1)
         ], dim=1)  # (batch, num_scalars)
 
-        features = torch.cat([cnn_features, scalars], dim=1)  # (batch, feature_dim)
+        # Process scalars (optionally through scalar network)
+        if self.scalar_network is not None:
+            scalar_features = self.scalar_network(scalars)  # (batch, scalar_output_dim)
+        else:
+            scalar_features = scalars  # (batch, num_scalars)
+
+        # Concatenate visual and scalar features
+        features = torch.cat([cnn_features, scalar_features], dim=1)  # (batch, feature_dim)
 
         # Actor and critic outputs
         action_logits = self.actor(features)  # (batch, num_actions)
         value = self.critic(features).squeeze(-1)  # (batch,)
 
-        return action_logits, value
+        if return_attention and attention_map is not None:
+            return action_logits, value, attention_map
+        else:
+            return action_logits, value
     
     def get_action_and_value(self, obs: dict, action: torch.Tensor = None):
         """

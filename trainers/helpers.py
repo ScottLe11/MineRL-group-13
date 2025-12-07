@@ -201,7 +201,7 @@ def log_episode_stats(episode: int, num_episodes: int, global_step: int,
     if hasattr(agent, 'get_action_stats'):
         stats = agent.get_action_stats()
         if stats:
-            print(f"  [Action Stats] Last 100: {stats['last_100_unique']}/{len(stats['last_100_actions'])} unique")
+            print(f"  [Action Stats] Last {agent.num_actions}: {stats['last_100_unique']}/{agent.num_actions} unique")
 
             # Print top 3 most frequent actions WITH NAMES
             top_actions = sorted(enumerate(stats['action_frequencies']), key=lambda x: x[1], reverse=True)[:3]
@@ -316,7 +316,7 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
     # Convert NumPy arrays to PyTorch tensors
     tensors = {
         'pov': torch.tensor(data['obs_pov'], dtype=torch.uint8).float().div(255.0), # Normalize POV here
-        'time': torch.tensor(data['obs_time'], dtype=torch.float32),
+        'time_left': torch.tensor(data['obs_time'], dtype=torch.float32),
         'yaw': torch.tensor(data['obs_yaw'], dtype=torch.float32),
         'pitch': torch.tensor(data['obs_pitch'], dtype=torch.float32),
         'place_table_safe': torch.tensor(data['obs_place_table_safe'], dtype=torch.float32),
@@ -326,7 +326,7 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
     }
 
     # Ensure scalar tensors have correct shape (N, 1)
-    for k in ['time', 'yaw', 'pitch', 'place_table_safe']:
+    for k in ['time_left', 'yaw', 'pitch', 'place_table_safe']:
         if tensors[k].dim() == 1:
             tensors[k] = tensors[k].unsqueeze(1)
 
@@ -351,11 +351,11 @@ def train_bc(config: dict, env, agent, logger):
     data_path = bc_config.get('data_path', 'bc_expert_data.npz')
     print(f"\n📦 Starting Behavioral Cloning (BC) using data from: {data_path}")
     expert_tensors = load_bc_data(data_path)
-    
+
     # 2. Setup DataLoader
     dataset = TensorDataset(
         expert_tensors['pov'].to(device),
-        expert_tensors['time'].to(device),
+        expert_tensors['time_left'].to(device),
         expert_tensors['yaw'].to(device),
         expert_tensors['pitch'].to(device),
         expert_tensors['place_table_safe'].to(device),
@@ -382,11 +382,11 @@ def train_bc(config: dict, env, agent, logger):
         total_epoch_loss = 0
         num_batches = 0
         
-        for pov_batch, time_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
+        for pov_batch, time_left_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
             # Construct observation dictionary for the DQN network
             obs_batch = {
                 'pov': pov_batch,
-                'time': time_batch,
+                'time_left': time_left_batch,
                 'yaw': yaw_batch,
                 'pitch': pitch_batch,
                 'place_table_safe': place_table_safe_batch
@@ -464,7 +464,7 @@ def train_bc(config: dict, env, agent, logger):
         # Current state
         state = {
             'pov': expert_tensors['pov'][i].unsqueeze(0),      # Add batch dim
-            'time': expert_tensors['time'][i].unsqueeze(0),
+            'time_left': expert_tensors['time_left'][i].unsqueeze(0),
             'yaw': expert_tensors['yaw'][i].unsqueeze(0),
             'pitch': expert_tensors['pitch'][i].unsqueeze(0),
             'place_table_safe': expert_tensors['place_table_safe'][i].unsqueeze(0)
@@ -473,7 +473,7 @@ def train_bc(config: dict, env, agent, logger):
         # Next state
         next_state = {
             'pov': expert_tensors['pov'][i+1].unsqueeze(0),
-            'time': expert_tensors['time'][i+1].unsqueeze(0),
+            'time_left': expert_tensors['time_left'][i+1].unsqueeze(0),
             'yaw': expert_tensors['yaw'][i+1].unsqueeze(0),
             'pitch': expert_tensors['pitch'][i+1].unsqueeze(0),
             'place_table_safe': expert_tensors['place_table_safe'][i+1].unsqueeze(0)
@@ -530,7 +530,7 @@ def train_bc_ppo(config: dict, env, agent, logger):
     # 2. Setup DataLoader
     dataset = TensorDataset(
         expert_tensors['pov'].to(device),
-        expert_tensors['time'].to(device),
+        expert_tensors['time_left'].to(device),
         expert_tensors['yaw'].to(device),
         expert_tensors['pitch'].to(device),
         expert_tensors['place_table_safe'].to(device),
@@ -558,11 +558,11 @@ def train_bc_ppo(config: dict, env, agent, logger):
         total_epoch_loss = 0
         num_batches = 0
 
-        for pov_batch, time_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
+        for pov_batch, time_left_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
             # Construct observation dictionary for the PPO policy network
             obs_batch = {
                 'pov': pov_batch,
-                'time_left': time_batch,
+                'time_left': time_left_batch,
                 'yaw': yaw_batch,
                 'pitch': pitch_batch,
                 'place_table_safe': place_table_safe_batch
@@ -678,7 +678,7 @@ def train_dqfd(config: dict, env, agent, logger):
     # 2. Create DataLoader
     dataset = TensorDataset(
         expert_tensors['pov'].to(device),
-        expert_tensors['time'].to(device),
+        expert_tensors['time_left'].to(device),
         expert_tensors['yaw'].to(device),
         expert_tensors['pitch'].to(device),
         expert_tensors['place_table_safe'].to(device),
@@ -713,12 +713,12 @@ def train_dqfd(config: dict, env, agent, logger):
 
         for batch_data in dataloader:
             # Unpack batch (no next_state in current data, so we approximate)
-            pov_batch, time_batch, yaw_batch, pitch_batch, place_safe_batch, action_batch, reward_batch, done_batch = batch_data
+            pov_batch, time_left_batch, yaw_batch, pitch_batch, place_safe_batch, action_batch, reward_batch, done_batch = batch_data
 
             # Construct observation dictionary
             obs_batch = {
                 'pov': pov_batch,
-                'time': time_batch,
+                'time_left': time_left_batch,
                 'yaw': yaw_batch,
                 'pitch': pitch_batch,
                 'place_table_safe': place_safe_batch

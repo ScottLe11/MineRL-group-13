@@ -37,6 +37,7 @@ from .attention import (
     create_attention,
 )
 from .dueling_head import DuelingHead
+from .scalar_network import ScalarNetwork
 from .dqn_network import DQNNetwork
 from .policy_network import ActorCriticNetwork
 
@@ -57,7 +58,8 @@ __all__ = [
     'TreechopSpatialBias',
     'create_attention',
     # Network heads
-    'DuelingHead', 
+    'DuelingHead',
+    'ScalarNetwork',
     'DQNNetwork',
     'ActorCriticNetwork',
 ]

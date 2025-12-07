@@ -65,6 +65,7 @@ class DQNAgent:
         gamma: float = 0.99,
         tau: float = 0.005,
         target_update_method: str = "soft",
+        soft_update_freq: int = 1,
         hard_update_freq: int = 1000,
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.05,
@@ -79,6 +80,9 @@ class DQNAgent:
         per_beta_end: float = 1.0,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
+        use_scalar_network: bool = False,
+        scalar_hidden_dim: int = 64,
+        scalar_output_dim: int = 64,
         device: str = None
     ):
         """
@@ -90,7 +94,8 @@ class DQNAgent:
             gamma: Discount factor
             tau: Soft update coefficient (used when target_update_method="soft")
             target_update_method: "soft" (Polyak averaging) or "hard" (periodic copy)
-            hard_update_freq: Steps between hard updates (used when target_update_method="hard")
+            soft_update_freq: Train steps between soft updates (used when target_update_method="soft")
+            hard_update_freq: Train steps between hard updates (used when target_update_method="hard")
             epsilon_start: Initial exploration rate
             epsilon_end: Final exploration rate
             epsilon_decay_steps: Steps to decay epsilon
@@ -104,6 +109,9 @@ class DQNAgent:
             per_beta_end: Final importance sampling exponent
             cnn_architecture: CNN architecture name ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
+            use_scalar_network: Whether to process scalars through 2-layer FC network
+            scalar_hidden_dim: Hidden dimension for scalar network
+            scalar_output_dim: Output dimension for scalar network
             device: 'cuda', 'mps', 'cpu', or None for auto-detect
         """
         # Device setup
@@ -117,20 +125,30 @@ class DQNAgent:
         self.device = torch.device(device)
         print(f"DQNAgent using device: {self.device}")
 
+        # Store critical hyperparams for resume
+        self.learning_rate = learning_rate
+        self.num_actions = num_actions
+
         # Networks (with configurable architecture)
         self.q_network = DQNNetwork(
             num_actions,
             input_channels,
             num_scalars,
             cnn_architecture=cnn_architecture,
-            attention_type=attention_type
+            attention_type=attention_type,
+            use_scalar_network=use_scalar_network,
+            scalar_hidden_dim=scalar_hidden_dim,
+            scalar_output_dim=scalar_output_dim
         ).to(self.device)
         self.target_network = DQNNetwork(
             num_actions,
             input_channels,
             num_scalars,
             cnn_architecture=cnn_architecture,
-            attention_type=attention_type
+            attention_type=attention_type,
+            use_scalar_network=use_scalar_network,
+            scalar_hidden_dim=scalar_hidden_dim,
+            scalar_output_dim=scalar_output_dim
         ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.target_network.eval()  # Target network is not trained
@@ -155,7 +173,6 @@ class DQNAgent:
             print("Using uniform replay buffer")
 
         # Hyperparameters
-        self.num_actions = num_actions
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
@@ -163,11 +180,13 @@ class DQNAgent:
 
         # Target update settings
         self.target_update_method = target_update_method.lower()
+        self.soft_update_freq = soft_update_freq
         self.hard_update_freq = hard_update_freq
         if self.target_update_method not in ("soft", "hard"):
             raise ValueError(f"target_update_method must be 'soft' or 'hard', got '{target_update_method}'")
         print(f"Target updates: {self.target_update_method}" +
-              (f" (tau={tau})" if self.target_update_method == "soft" else f" (every {hard_update_freq} steps)"))
+              (f" (tau={tau}, every {soft_update_freq} steps)" if self.target_update_method == "soft" 
+               else f" (every {hard_update_freq} steps)"))
 
         # Exploration
         self.epsilon_start = epsilon_start
@@ -181,6 +200,7 @@ class DQNAgent:
         # Counters
         self.step_count = 0
         self.train_count = 0
+        self.episode_count = 0 
 
         # Action frequency tracking (for debugging)
         self.action_counts = [0] * num_actions
@@ -213,7 +233,8 @@ class DQNAgent:
                 action = q_values.argmax(dim=1).item()
 
         # Track action frequency (for debugging)
-        self.action_counts[action] += 1
+        if action < len(self.action_counts):
+            self.action_counts[action] += 1
         self.last_actions.append(action)
         if len(self.last_actions) > 100:  # Keep last 100
             self.last_actions.pop(0)
@@ -255,7 +276,7 @@ class DQNAgent:
         }
 
     def store_experience(self, state: Dict, action: int, reward: float, 
-                        next_state: Dict, done: bool):
+                         next_state: Dict, done: bool):
         """Store experience in replay buffer."""
         self.replay_buffer.add(state, action, reward, next_state, done)
         self.step_count += 1
@@ -321,7 +342,7 @@ class DQNAgent:
             self.replay_buffer.update_priorities(indices, priorities)
 
         # Update target network (soft or hard)
-        if self.target_update_method == "soft":
+        if self.target_update_method == "soft" and self.train_count % self.soft_update_freq == 0:
             self._soft_update()
         elif self.target_update_method == "hard" and self.train_count % self.hard_update_freq == 0:
             self._hard_update()
@@ -345,7 +366,7 @@ class DQNAgent:
     def _soft_update(self):
         """Soft update target network weights: θ_target = τ*θ_local + (1-τ)*θ_target"""
         for target_param, local_param in zip(self.target_network.parameters(),
-                                              self.q_network.parameters()):
+                                             self.q_network.parameters()):
             target_param.data.copy_(self.tau * local_param.data + (1.0 - self.tau) * target_param.data)
 
     def _hard_update(self):
@@ -386,20 +407,89 @@ class DQNAgent:
             'target_network_state_dict': self.target_network.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
-            'train_count': self.train_count
+            'train_count': self.train_count,
+            'episode_count': self.episode_count
         }, path)
-        print(f"Agent saved to {path}")
+        print(f"DQN agent saved to {path}")
     
     def load(self, path: str):
-        """Load agent state from file."""
+        """Load agent state from file with shape handling and hyperparam override."""
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
-        self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # 1. Load Q Network with Shape Mismatch Handling (Action Space Change)
+        saved_state = checkpoint['q_network_state_dict']
+        current_state = self.q_network.state_dict()
+        new_state = {}
+        
+        mismatch_detected = False
+        for k, v in current_state.items():
+            if k in saved_state:
+                saved_v = saved_state[k]
+                if saved_v.shape != v.shape:
+                    mismatch_detected = True
+                    print(f"⚠️  Shape mismatch for {k}: saved {saved_v.shape}, current {v.shape}")
+                    
+                    # Create buffer matching current shape
+                    # Copy matching parts, effectively slicing if saved is larger, or padding if smaller
+                    min_dim = min(saved_v.shape[0], v.shape[0])
+                    
+                    # Assume dim 0 is output (actions)
+                    if len(v.shape) == 1: 
+                        v[:min_dim] = saved_v[:min_dim]
+                    elif len(v.shape) >= 2: 
+                         v[:min_dim, ...] = saved_v[:min_dim, ...]
+                         
+                    new_state[k] = v
+                else:
+                    new_state[k] = saved_v
+            else:
+                new_state[k] = v 
+
+        self.q_network.load_state_dict(new_state)
+        self.target_network.load_state_dict(new_state) 
+        
+        if mismatch_detected:
+            print("Handled action space mismatch by preserving matching weights.")
+
+        # 2. Load Optimizer but FORCE current Learning Rate
+        if 'optimizer_state_dict' in checkpoint:
+            try:
+                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                
+                # Force update learning rate from current config
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
+                    
+                print(f"Optimizer loaded")
+            except Exception as e:
+                print(f"Optimizer load failed (likely shape change), resetting optimizer: {e}")
+                self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
+
+        # 3. Restore Counters
         self.step_count = checkpoint['step_count']
         self.train_count = checkpoint['train_count']
-        print(f"Agent loaded from {path}")
+        self.episode_count = checkpoint.get('episode_count', 0)
 
+        # 4. Restore replay buffer if it exists
+        if 'replay_buffer' in checkpoint:
+            print("🔄 Restoring replay buffer from checkpoint...")
+            try:
+                buffer_data = checkpoint['replay_buffer']
+
+                if hasattr(self.replay_buffer, 'buffer'):
+                    # Regular ReplayBuffer
+                    self.replay_buffer.buffer.extend(buffer_data)
+                    self.replay_buffer.position = len(self.replay_buffer.buffer) % self.replay_buffer.capacity
+                    print(f"✅ Restored {len(buffer_data)} experiences to replay buffer")
+                elif hasattr(self.replay_buffer, 'add_experience'):
+                    # PrioritizedReplayBuffer
+                    for exp in buffer_data:
+                        self.replay_buffer.add_experience(*exp)
+                    print(f"✅ Restored {len(buffer_data)} experiences to prioritized replay buffer")
+            except Exception as e:
+                print(f"Could not restore buffer (format might differ): {e}")
+        else:
+            print("ℹ️  No replay buffer in checkpoint")
 
 if __name__ == "__main__":
     # Quick test
@@ -455,4 +545,3 @@ if __name__ == "__main__":
     print(f"    Action (greedy): {action_greedy}")
     
     print("\n✅ DQNAgent test passed!")
-

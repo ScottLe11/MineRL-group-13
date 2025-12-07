@@ -91,7 +91,7 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
                 print(f"\n🧠 Loading pre-trained weights: {bc_checkpoint_path}")
 
                 # Load checkpoint data
-                checkpoint = torch.load(bc_checkpoint_path, map_location=device)
+                checkpoint = torch.load(bc_checkpoint_path, map_location=device, weights_only=False)
 
                 # Load Q-Network weights from checkpoint
                 if 'q_network_state_dict' in checkpoint:

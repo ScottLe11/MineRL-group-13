@@ -132,6 +132,9 @@ class DQNNetwork(nn.Module):
                 yaw = yaw.unsqueeze(1)
             if pitch.dim() == 1:
                 pitch = pitch.unsqueeze(1)
+                
+            if place_table_safe.dim() == 1:
+                place_table_safe = place_table_safe.unsqueeze(1)
 
             scalars = torch.cat([time_left, yaw, pitch, place_table_safe], dim=1)  # (batch, 4)
 

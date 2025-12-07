@@ -484,7 +484,7 @@ def train_bc(config: dict, env, agent, logger):
         done = bool(expert_tensors['dones'][i].item())
 
         # Add to replay buffer
-        agent.replay_buffer.push(state, action, reward, next_state, done)
+        agent.replay_buffer.add(state, action, reward, next_state, done)
         transitions_added += 1
 
         # Log progress every 10%

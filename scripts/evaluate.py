@@ -40,7 +40,7 @@ def load_agent_from_checkpoint(checkpoint_path: str, config: dict, num_actions: 
     agent = create_agent(config, num_actions=num_actions)
 
     # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=config['device'])
+    checkpoint = torch.load(checkpoint_path, map_location=config['device'], weights_only=False)
     agent.load(checkpoint_path)
 
     # Set to eval mode if applicable
@@ -56,7 +56,7 @@ def load_agent_from_checkpoint(checkpoint_path: str, config: dict, num_actions: 
     return agent
 
 
-def evaluate_episode(env, agent, render: bool = False):
+def evaluate_episode(env, agent, render: bool = False, max_steps: int = 125):
     """
     Run a single evaluation episode.
 
@@ -74,7 +74,7 @@ def evaluate_episode(env, agent, render: bool = False):
     wood_collected = 0
     done = False
 
-    while not done:
+    while not done and episode_length < max_steps:
         # Select action (greedy for DQN, sample from policy for PPO)
         if hasattr(agent, 'select_action'):
             # PPO agent - returns (action, log_prob, value)
@@ -129,8 +129,10 @@ def evaluate(config: dict, checkpoint_path: str, num_episodes: int, render: bool
     print(f"Evaluating {algorithm.upper()} for {num_episodes} episodes...")
     print(f"{'='*60}\n")
 
+    episode_seconds = config['environment'].get('episode_seconds', 25)
+    max_steps = episode_seconds * 5
     for ep in range(num_episodes):
-        reward, length, wood = evaluate_episode(env, agent, render)
+        reward, length, wood = evaluate_episode(env, agent, render, max_steps)
         rewards.append(reward)
         lengths.append(length)
         wood_counts.append(wood)

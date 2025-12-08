@@ -79,14 +79,14 @@ def get_basic_inventory_counts(obs):
 def debug_inventory(obs, prefix="[crafting_guide]"):
     """ Convenience helper to print a compact view of the inventory """
     if obs is None:
-        print(f"{prefix} No observation provided.")
+        #print(f"{prefix} No observation provided.")
         return
     counts = get_basic_inventory_counts(obs)
-    print(
-        f"{prefix} logs={counts['logs']}  planks={counts['planks']}  "
-        f"sticks={counts['sticks']}  table={counts['crafting_table']}  "
-        f"wooden_axes={counts['wooden_axe']}"
-    )
+    # print(
+    #     f"{prefix} logs={counts['logs']}  planks={counts['planks']}  "
+    #     f"sticks={counts['sticks']}  table={counts['crafting_table']}  "
+    #     f"wooden_axes={counts['wooden_axe']}"
+    # )
 
 
 def ensure_have_items(required, obs, prefix="[crafting_guide]"):
@@ -100,10 +100,10 @@ def ensure_have_items(required, obs, prefix="[crafting_guide]"):
         keys = LOGICAL_TO_KEYS.get(logical_name, [logical_name])
         have = _count_any(inv, keys)
         if have < needed:
-            print(
-                f"{prefix} Not enough {logical_name}: "
-                f"need {needed}, have {have}. Aborting craft."
-            )
+            # print(
+            #     f"{prefix} Not enough {logical_name}: "
+            #     f"need {needed}, have {have}. Aborting craft."
+            # )
             ok = False
 
     return ok

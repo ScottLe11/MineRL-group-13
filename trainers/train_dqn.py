@@ -192,6 +192,47 @@ def train_dqn(config: dict, env, agent, logger, render: bool = False):
         log_episode_stats(episode, num_episodes, global_step, episode_wood,
                          recent_wood, agent, env, obs, log_freq)
         
+        # --- Grad-CAM Visualization ---
+        grad_cam_freq = config['training'].get('grad_cam_freq', 0)
+        if grad_cam_freq > 0 and episode % grad_cam_freq == 0:
+            try:
+                # We need the raw observation from before the wrappers processed it.
+                # The `get_last_full_frame` method is on the StackAndProcessWrapper.
+                # Assuming the wrapper stack allows access to it.
+                raw_pov = env.get_last_full_frame()
+                if raw_pov is not None:
+                    from utils.visualization import generate_grad_cam_overlay
+                    
+                    # Create a dictionary for the observation as expected by the function
+                    raw_obs_for_cam = {'pov': raw_pov}
+                    
+                    # Get the necessary components for Grad-CAM
+                    model = agent.q_network
+                    target_layer = model.cnn.conv[4] # Assuming 'medium' CNN arch
+                    attack_action_index = config['grad_cam']['attack_action_index']
+                    device = agent.device
+
+                    # Generate the overlay
+                    overlay_image = generate_grad_cam_overlay(
+                        model, target_layer, raw_obs_for_cam, attack_action_index, device
+                    )
+                    
+                    # Log the image to TensorBoard
+                    logger.log_image("Grad-CAM/Attack_Action", overlay_image, episode)
+                    print(f"📸 Generated Grad-CAM for episode {episode}.")
+
+                    # Save the image to a file
+                    import cv2
+                    output_dir = "grad_cam_images"
+                    os.makedirs(output_dir, exist_ok=True)
+                    filename = os.path.join(output_dir, f"grad_cam_ep{episode}.jpg")
+                    # Convert RGB to BGR for cv2.imwrite
+                    cv2.imwrite(filename, cv2.cvtColor(overlay_image, cv2.COLOR_RGB2BGR))
+                    print(f"   Saved Grad-CAM image to {filename}")
+
+            except Exception as e:
+                print(f"⚠️ Could not generate Grad-CAM visualization: {e}")
+
         # Save checkpoint (uses common function)
         if episode % save_freq == 0:
             save_path = os.path.join(checkpoint_dir, f"checkpoint_{algorithm}_ep{episode}.pt")

@@ -88,11 +88,11 @@ def register_custom_env(env_id: str, curriculum_config: dict, max_episode_steps:
             raise
 
 
-def create_env(config: dict):
+def create_env(config: dict, wrap: bool = True):
     """
     Create and wrap the MineRL environment.
 
-    Wrapper order:
+    Wrapper order (if wrap=True):
     1. Base MineRL env (ConfigurableTreechop)
     2. StackAndProcessWrapper (frame processing)
     3. HoldAttackWrapper (attack duration)
@@ -102,20 +102,34 @@ def create_env(config: dict):
 
     Args:
         config: Configuration dictionary
+        wrap: If False, returns the raw, unwrapped environment.
 
     Returns:
-        Fully wrapped environment ready for training
+        Fully wrapped or raw environment.
     """
     env_config = config['environment']
-    reward_config = config.get('rewards', {})
-    action_config = config.get('action_space', {})
-
+    
     # Get curriculum configuration
     curriculum = env_config.get('curriculum', {})
     print(f"Curriculum config: with_logs={curriculum.get('with_logs', 0)}, "
           f"with_axe={curriculum.get('with_axe', False)}, "
           f"spawn_type={curriculum.get('spawn_type', 'random')}")
 
+    # Register and create environment
+    env_id = env_config['name']
+    register_custom_env(env_id, curriculum, max_episode_steps=8000)
+    env = gym.make(env_id)
+    print(f"✓ Created MineRL environment: {env_id}")
+
+    if not wrap:
+        print("✓ Returning raw, unwrapped environment.")
+        return env
+
+    # --- Apply wrappers if wrap=True ---
+    print("Applying environment wrappers...")
+    reward_config = config.get('rewards', {})
+    action_config = config.get('action_space', {})
+    
     # Calculate max steps per episode
     episode_seconds = env_config.get('episode_seconds', 20)
     max_steps_per_episode = episode_seconds * AGENT_STEPS_PER_SECOND
@@ -123,12 +137,6 @@ def create_env(config: dict):
     # Parse action space configuration
     enabled_actions = parse_action_space_config(action_config)
     print(f"Action space: {len(enabled_actions)} actions (preset: {action_config.get('preset', 'base')})")
-
-    # Register and create environment
-    env_id = env_config['name']
-    register_custom_env(env_id, curriculum, max_episode_steps=8000)
-    env = gym.make(env_id)
-    print(f"✓ Created MineRL environment: {env_id}")
 
     # Apply wrappers in order
     env = StackAndProcessWrapper(env, shape=tuple(env_config['frame_shape']))
@@ -147,5 +155,6 @@ def create_env(config: dict):
     )
     env = ObservationWrapper(env, max_episode_steps=max_steps_per_episode)
     env = ConfigurableActionWrapper(env, enabled_actions=enabled_actions)
+    print("✓ All wrappers applied.")
 
     return env

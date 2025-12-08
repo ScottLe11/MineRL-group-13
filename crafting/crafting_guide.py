@@ -166,7 +166,7 @@ def craft_table_in_inventory(env, helper, width=640, height=360, obs=None):
         if safe_arr is not None:
             safe_flag = float(np.array(safe_arr).reshape(()))
             if safe_flag < 0.5:
-                print(f"[crafting_guide] Not safe to place, aborting craft_table_in_inventory.")
+                #print(f"[crafting_guide] Not safe to place, aborting craft_table_in_inventory.")
                 return False
 
     tl, craft2_tl, craft2_out, inv_tl, hotbar_tl = inv_gui_coords(width, height)
@@ -211,12 +211,12 @@ def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
     global NEXT_AXE_SLOT, AXES_CRAFTED_THIS_EPISODE, TABLE_GUI_OPEN
 
     if not TABLE_GUI_OPEN:
-        print("[crafting_guide] Not in crafting table 3x3 GUI. Aborting craft_wooden_axe.")
+        #print("[crafting_guide] Not in crafting table 3x3 GUI. Aborting craft_wooden_axe.")
         return False
     
     if obs is not None:
         if AXES_CRAFTED_THIS_EPISODE >= MAX_AXES_IN_HOTBAR:
-            print("[crafting_guide] Axe cap reached (>= 5 axes in hotbar). Aborting craft_wooden_axe.")
+            #print("[crafting_guide] Axe cap reached (>= 5 axes in hotbar). Aborting craft_wooden_axe.")
             helper.toggle_inventory()
             TABLE_GUI_OPEN = False
             look(env, pitch=-7.0, repeats=6)
@@ -271,12 +271,12 @@ def craft_pipeline_make_and_equip_axe(env, helper, logs_to_convert=3, width=640,
 
     if obs is not None:
         if AXES_CRAFTED_THIS_EPISODE >= MAX_AXES_IN_HOTBAR:
-            print("[crafting_guide] Axe cap reached (>= 5 axes in hotbar). Aborting pipeline.")
+            #print("[crafting_guide] Axe cap reached (>= 5 axes in hotbar). Aborting pipeline.")
             return False
 
         required_logs = max(3, logs_to_convert)
         if not ensure_have_items({"logs": required_logs}, obs):
-            print("[crafting_guide] Not enough logs to start full axe pipeline.")
+            #print("[crafting_guide] Not enough logs to start full axe pipeline.")
             return False
 
     current_obs = obs

@@ -139,6 +139,20 @@ class Logger:
                 metric_name = f"train/{key}"
                 self.log_scalar(metric_name, value, step)
     
+    def log_image(self, tag: str, img_tensor: "np.ndarray", step: int = None):
+        """
+        Log an image to TensorBoard.
+
+        Args:
+            tag (str): Name for the image (e.g., "grad_cam").
+            img_tensor (np.ndarray): Image as a NumPy array (HWC).
+            step (int, optional): Global step. Defaults to internal episode counter.
+        """
+        if self.writer is not None:
+            if step is None:
+                step = self.episode
+            self.writer.add_image(tag, img_tensor, step, dataformats='HWC')
+
     def set_step(self, step: int):
         """Set the global step counter."""
         self.step = step

@@ -16,6 +16,8 @@ import pygame
 import gym
 import sys
 from pathlib import Path
+from gym.envs.registration import register
+import main
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))

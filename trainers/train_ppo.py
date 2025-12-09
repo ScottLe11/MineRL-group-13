@@ -122,7 +122,6 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
         episode_reward = 0
         episode_wood = 0
         step_in_episode = 0
-        episode += 1
 
         # Run episode and collect rollout
         while step_in_episode < max_steps_per_episode:
@@ -219,6 +218,8 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
                 last_best_model_path = best_path
             
             cleanup_checkpoints(checkpoint_dir, algorithm, episode, keep_last=2)
+
+        episode += 1
 
     print(f"\n{'='*60}")
     print(f"TRAINING COMPLETE")

@@ -162,13 +162,15 @@ def craft_table_in_inventory(env, helper, width=640, height=360, obs=None):
         if not ensure_have_items({"planks": 4}, obs):
             return False
 
+        ''' 
         safe_arr = obs.get("place_table_safe", None)
         if safe_arr is not None:
             safe_flag = float(np.array(safe_arr).reshape(()))
             if safe_flag < 0.5:
                 #print(f"[crafting_guide] Not safe to place, aborting craft_table_in_inventory.")
                 return False
-
+        '''
+        
     tl, craft2_tl, craft2_out, inv_tl, hotbar_tl = inv_gui_coords(width, height)
 
     helper.toggle_inventory(); tick(env, 2)
@@ -262,6 +264,23 @@ def craft_wooden_axe(env, helper, width=640, height=360, obs=None):
 
     return True
 
+def craft_table_then_axe(env, helper, width=640, height=360, obs=None):
+    """ Combined Macro: Craft and Place Table and Open Table and Craft Axe """
+    global TABLE_GUI_OPEN
+
+    
+    if obs is not None:
+        if not ensure_have_items({"planks": 7, "sticks": 2}, obs):
+            # print("[crafting_guide] Not enough items for Table+Axe chain.")
+            return False
+
+    ok = craft_table_in_inventory(env, helper, width, height, obs)
+    if not ok:
+        return False
+
+    ok = craft_wooden_axe(env, helper, width, height, obs=None)
+    
+    return ok
 
 def craft_pipeline_make_and_equip_axe(env, helper, logs_to_convert=3, width=640, height=360, obs=None):
     """ Runs the full sequence to craft to wooden axe. Checks requirements if it can craft """

@@ -100,31 +100,37 @@ def train(config: dict, render: bool = False, resume_checkpoint: str = None):
 
                 # Load checkpoint data
                 checkpoint = torch.load(bc_checkpoint_path, map_location=device, weights_only=False)
-
+                
+                if 'network' in checkpoint:
+                    network_data = checkpoint['network']
+                    buffer_data = checkpoint.get('replay_buffer', [])
+                else:
+                    network_data = checkpoint
+                    buffer_data = checkpoint.get('replay_buffer', [])
+                    
                 # Load Q-Network weights from checkpoint
-                if 'q_network_state_dict' in checkpoint:
+                if 'q_network_state_dict' in network_data:
                      # Load weights into the online Q-Network
-                     agent.q_network.load_state_dict(checkpoint['q_network_state_dict'], strict=False)
+                     agent.q_network.load_state_dict(network_data['q_network_state_dict'], strict=False)
                      
                      # Initialize target network with pre-trained weights too
-                     agent.target_network.load_state_dict(checkpoint['q_network_state_dict'], strict=False)
+                     agent.target_network.load_state_dict(network_data['q_network_state_dict'], strict=False)
                      
                      print("✅ Successfully loaded weights into Q-Network.")
 
                      # Load replay buffer if it exists (from bc_dqn with buffer pre-filling)
-                     if 'replay_buffer' in checkpoint:
+                     if buffer_data and len(buffer_data) > 0:
                          print("🔄 Restoring replay buffer with expert demonstrations...")
-                         buffer_data = checkpoint['replay_buffer']
                         
                          # Restore buffer experiences
                          if hasattr(agent.replay_buffer, 'buffer'):
                              # Regular ReplayBuffer
                              agent.replay_buffer.buffer.extend(buffer_data)
                              agent.replay_buffer.position = len(agent.replay_buffer.buffer) % agent.replay_buffer.capacity
-                         elif hasattr(agent.replay_buffer, 'add_experience'):
+                         elif hasattr(agent.replay_buffer, 'add'):
                              # PrioritizedReplayBuffer
                              for exp in buffer_data:
-                                 agent.replay_buffer.add_experience(*exp)
+                                 agent.replay_buffer.add(*exp)
                          print(f"✅ Restored {len(buffer_data)} expert transitions.")
                      else:
                          print("ℹ️  No replay buffer in checkpoint (normal for older bc_dqn)")

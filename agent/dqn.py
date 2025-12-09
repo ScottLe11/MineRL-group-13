@@ -402,13 +402,34 @@ class DQNAgent:
     
     def save(self, path: str):
         """Save agent state to file."""
-        torch.save({
-            'q_network_state_dict': self.q_network.state_dict(),
-            'target_network_state_dict': self.target_network.state_dict(),
+        progress_settings = {
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
             'train_count': self.train_count,
-            'episode_count': self.episode_count
+            'episode_count': self.episode_count,
+            'action_counts': self.action_counts,
+            'last_actions': self.last_actions,
+            'epsilon': self.get_epsilon()
+        }
+
+        network = {
+            'q_network_state_dict': self.q_network.state_dict(),
+            'target_network_state_dict': self.target_network.state_dict()
+        }
+
+        buffer_data = []
+        try:
+            if hasattr(self.replay_buffer, 'get_all_experiences'):
+                buffer_data = self.replay_buffer.get_all_experiences()
+            elif hasattr(self.replay_buffer, 'buffer'):
+                buffer_data = list(self.replay_buffer.buffer)
+        except Exception as e:
+            print(f"Warning: Could not serialize replay buffer: {e}")
+
+        torch.save({
+            'progress_settings': progress_settings,
+            'network': network,
+            'replay_buffer': buffer_data
         }, path)
         print(f"DQN agent saved to {path}")
     
@@ -416,8 +437,30 @@ class DQNAgent:
         """Load agent state from file with shape handling and hyperparam override."""
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         
+        if 'network' in checkpoint and 'progress_settings' in checkpoint:
+            print("Loading new format checkpoint...")
+            network_state = checkpoint['network']
+            settings = checkpoint['progress_settings']
+            buffer_data = checkpoint.get('replay_buffer', [])
+        else:
+            print("Loading old format checkpoint...")
+            network_state = checkpoint
+            settings = checkpoint
+            buffer_data = checkpoint.get('replay_buffer', [])
+
+        # Cross-Policy Check: PPO -> DQN
+        if 'q_network_state_dict' not in network_state and 'policy_state_dict' in network_state:
+            print(f"\nCross-Policy Load Detected: PPO Checkpoint -> DQN Agent")
+            ppo_state = network_state['policy_state_dict']
+            dqn_constructed_state = {}
+            for k, v in ppo_state.items():
+                if any(scope in k for scope in ['cnn.', 'attention.', 'scalar_network.']):
+                    dqn_constructed_state[k] = v
+            network_state['q_network_state_dict'] = dqn_constructed_state
+            settings = {}
+
         # 1. Load Q Network with Shape Mismatch Handling (Action Space Change)
-        saved_state = checkpoint['q_network_state_dict']
+        saved_state = network_state['q_network_state_dict']
         current_state = self.q_network.state_dict()
         new_state = {}
         
@@ -429,16 +472,13 @@ class DQNAgent:
                     mismatch_detected = True
                     print(f"⚠️  Shape mismatch for {k}: saved {saved_v.shape}, current {v.shape}")
                     
-                    # Create buffer matching current shape
-                    # Copy matching parts, effectively slicing if saved is larger, or padding if smaller
-                    min_dim = min(saved_v.shape[0], v.shape[0])
-                    
-                    # Assume dim 0 is output (actions)
-                    if len(v.shape) == 1: 
-                        v[:min_dim] = saved_v[:min_dim]
-                    elif len(v.shape) >= 2: 
-                         v[:min_dim, ...] = saved_v[:min_dim, ...]
-                         
+                    slices = tuple(slice(0, min(ds, dc)) for ds, dc in zip(saved_v.shape, v.shape))
+
+                    try:
+                        v[slices] = saved_v[slices]
+                    except Exception as e:
+                        print(f"Could not auto-slice {k}: {e}.")
+
                     new_state[k] = v
                 else:
                     new_state[k] = saved_v
@@ -446,15 +486,18 @@ class DQNAgent:
                 new_state[k] = v 
 
         self.q_network.load_state_dict(new_state)
-        self.target_network.load_state_dict(new_state) 
+        if 'target_network_state_dict' in network_state:
+             self.target_network.load_state_dict(network_state['target_network_state_dict'])
+        else:
+             self.target_network.load_state_dict(new_state)
         
         if mismatch_detected:
             print("Handled action space mismatch by preserving matching weights.")
 
         # 2. Load Optimizer but FORCE current Learning Rate
-        if 'optimizer_state_dict' in checkpoint:
+        if 'optimizer_state_dict' in settings:
             try:
-                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                self.optimizer.load_state_dict(settings['optimizer_state_dict'])
                 
                 # Force update learning rate from current config
                 for param_group in self.optimizer.param_groups:
@@ -466,26 +509,19 @@ class DQNAgent:
                 self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
 
         # 3. Restore Counters
-        self.step_count = checkpoint['step_count']
-        self.train_count = checkpoint['train_count']
-        self.episode_count = checkpoint.get('episode_count', 0)
+        self.step_count = settings.get('step_count', 0)
+        self.train_count = settings.get('train_count', 0)
+        self.episode_count = settings.get('episode_count', 0)
+        self.action_counts = settings.get('action_counts', [0] * self.num_actions)
+        self.last_actions = settings.get('last_actions', [])
 
         # 4. Restore replay buffer if it exists
-        if 'replay_buffer' in checkpoint:
+        if buffer_data:
             print("🔄 Restoring replay buffer from checkpoint...")
             try:
-                buffer_data = checkpoint['replay_buffer']
-
-                if hasattr(self.replay_buffer, 'buffer'):
-                    # Regular ReplayBuffer
-                    self.replay_buffer.buffer.extend(buffer_data)
-                    self.replay_buffer.position = len(self.replay_buffer.buffer) % self.replay_buffer.capacity
-                    print(f"✅ Restored {len(buffer_data)} experiences to replay buffer")
-                elif hasattr(self.replay_buffer, 'add_experience'):
-                    # PrioritizedReplayBuffer
-                    for exp in buffer_data:
-                        self.replay_buffer.add_experience(*exp)
-                    print(f"✅ Restored {len(buffer_data)} experiences to prioritized replay buffer")
+                for exp in buffer_data:
+                    self.replay_buffer.add(*exp)
+                print(f"✅ Restored {len(buffer_data)} experiences to prioritized replay buffer")
             except Exception as e:
                 print(f"Could not restore buffer (format might differ): {e}")
         else:

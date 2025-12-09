@@ -22,6 +22,11 @@ import numpy as np
 import pickle
 import os
 from collections import OrderedDict
+import sys
+
+# Add project root to path to allow importing project files
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils.config import load_config
 
 # Full pool action indices (from wrappers/discrete_actions.py)
 FULL_ACTION_POOL = {
@@ -126,21 +131,36 @@ def discretize_action_factory(enabled_actions: list) -> callable:
     return discretize_action
 
 def load_all_trajectories(log_dir="expert_trajectory"):
-    """Loads and combines all trajectories from the specified directory."""
+    """
+    Loads and combines all trajectories from a directory, skipping empty/corrupted files.
+    """
     all_trajectories = []
     
     # Get all .pkl files in the directory
-    for filename in os.listdir(log_dir):
-        if filename.endswith(".pkl"):
-            filepath = os.path.join(log_dir, filename)
-            
-            # Use 'rb' (read binary) mode to load the pickle file
-            with open(filepath, 'rb') as f:
+    try:
+        filenames = [f for f in os.listdir(log_dir) if f.endswith(".pkl")]
+    except FileNotFoundError:
+        print(f"[ERROR] The directory '{log_dir}' was not found.")
+        return [] # Return empty list to prevent crash
+
+    loaded_file_count = 0
+    
+    for filename in filenames:
+        filepath = os.path.join(log_dir, filename)
+        
+        # Use 'rb' (read binary) mode to load the pickle file
+        with open(filepath, 'rb') as f:
+            try:
                 # The file content is the list of dictionaries saved by your recorder
                 trajectory = pickle.load(f)
                 all_trajectories.extend(trajectory)
+                loaded_file_count += 1
+            except EOFError:
+                print(f"[WARNING] Skipping empty or truncated file: {filename}")
+            except pickle.UnpicklingError:
+                print(f"[WARNING] Skipping corrupted pickle file: {filename}")
                 
-    print(f"Successfully loaded and combined {len(os.listdir(log_dir))} files.")
+    print(f"Successfully loaded and combined {loaded_file_count} of {len(filenames)} files.")
     print(f"Total number of transitions (steps): {len(all_trajectories)}")
     return all_trajectories
 
@@ -201,13 +221,23 @@ def extract_bc_data(raw_transitions, config: dict):
 
             # NEW: Check if action is already a discrete index (from discrete recorder)
             if isinstance(raw_action, (int, np.integer)):
+                # Convert recorded NOOP value (-1) to the correct index (0)
+                if raw_action == -1:
+                    raw_action = 0
+                
+                ## this remaps attack 10/5 to basic attack: might need to be chanaged later?    
+                # Remap extended attack (25 or 24) to basic attack (6) if needed
+                if raw_action in [24, 25] and raw_action not in enabled_actions and 6 in enabled_actions:
+                    #print(f"[INFO] Remapping action {raw_action} to 6 (attack) for transition {i}.")
+                    raw_action = 6
+
                 # Direct discrete action index - no conversion needed!
                 # Map from original index (0-25) to enabled action index (0-N-1)
                 if raw_action in enabled_actions:
                     # Map original index to position in enabled_actions list
                     discrete_action_mapped_index = enabled_actions.index(raw_action)
                 else:
-                    print(f"[WARNING] Skipping record at index {i}. Action index {raw_action} not in enabled_actions.")
+                    #print(f"[WARNING] Skipping record at index {i}. Action index {raw_action} not in enabled_actions (check config).")
                     continue
             elif isinstance(raw_action, dict):
                 # Legacy format: MineRL action dictionary - use discretization logic
@@ -255,36 +285,44 @@ def extract_bc_data(raw_transitions, config: dict):
 
 
 if __name__ == "__main__":
-    mock_config = {'action_space': {'preset': 'custom', 'enabled_actions': [1, 8, 9, 12, 13, 15, 17, 25]}}
-    discretizer = discretize_action_factory(mock_config['action_space']['enabled_actions'])
-    
-    # Test cases:
-    # Action 25 (attack_10) -> Mapped Index 7
-    # Action 1 (forward) -> Mapped Index 0
-    # Camera turn > 10.0 -> Mapped Index 2 or 4
-    
-    assert discretizer({'attack': 1}) == 7, "Attack should map to attack_10 (Mapped Index 7)"
-    assert discretizer({'forward': 1}) == 0, "Forward should map to Mapped Index 0"
-    assert discretizer({'camera': [0, 20.0]}) == 4, "Large yaw right should map to turn_right_60 (Mapped Index 4)"
-    print("✅ Discretizer logic validated.")
-    
+    # Load the actual project configuration
+    try:
+        config = load_config()
+        print("✅ Loaded configuration from config/config.yaml")
+    except FileNotFoundError:
+        print("❌ ERROR: config/config.yaml not found. Please ensure the script is run from the project root.")
+        sys.exit(1)
+
     # Example usage:
     try:
-        raw_transitions = load_all_trajectories()
+        # Allow specifying directory via command line, default to discrete recordings
+        input_dir = "expert_trajectory_discrete"
+        if len(sys.argv) > 1:
+            input_dir = sys.argv[1]
+
+        if not os.path.isdir(input_dir):
+            print(f"ERROR: Directory not found: '{input_dir}'")
+            print("Usage: python pkl_parser.py [path_to_trajectory_dir]")
+            sys.exit(1)
+
+        print(f"\nLoading trajectories from: '{input_dir}'...")
+        raw_transitions = load_all_trajectories(log_dir=input_dir)
 
         # 2. Extract and format the observations and actions into NumPy arrays
-        data = extract_bc_data(raw_transitions, config=mock_config)
+        print("Extracting data for Behavioral Cloning...")
+        data = extract_bc_data(raw_transitions, config=config)
             
         # 3. Save the processed data to a compressed NumPy file (.npz)
         OUTPUT_FILENAME = "bc_expert_data.npz"
         # Combine all required keys into the output file
         np.savez_compressed(OUTPUT_FILENAME, **data)
             
-        print(f"\n SUCCESS: Processed data saved to {OUTPUT_FILENAME}")
+        print(f"\n✅ SUCCESS: Processed data saved to {OUTPUT_FILENAME}")
         print(f" \t Total discrete actions mapped: {len(data['actions'])}")
-        print("This file is ready for Behavioral Cloning (BC) training.")
+        print("This file is now ready for Behavioral Cloning (BC) training.")
 
-    except ValueError as e:
-        print(f"\n FAILURE: Extraction failed.")
-        print(f"Error: {e}")
+    except (ValueError, FileNotFoundError) as e:
+        print(f"\n❌ FAILURE: Extraction failed.")
+        print(f"   Error: {e}")
+        print("   Please ensure the directory contains valid .pkl files.")
 

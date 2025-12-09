@@ -183,7 +183,7 @@ if __name__ == "__main__":
     # Build key mapping from config if available, otherwise use defaults
     if 'key_bindings' in action_config:
         # Custom key bindings from config
-        import pygame
+        
         KEY_NAME_TO_CONSTANT = {
             'w': pygame.K_w, 'a': pygame.K_a, 's': pygame.K_s, 'd': pygame.K_d,
             'space': pygame.K_SPACE, 'r': pygame.K_r, 'f': pygame.K_f,
@@ -267,13 +267,18 @@ if __name__ == "__main__":
         # Execute current action
         discrete_action_idx = action_queue.step()
 
-        # Convert to MineRL dictionary action
-        minerl_action = enabled_actions[discrete_action_idx].to_minerl_dict()
+        # Convert to MineRL dictionary action.
+        # If queue is idle, it returns 0. If 0 is not enabled, we manually create a no-op.
+        if discrete_action_idx not in enabled_actions:
+            minerl_action = DISCRETE_ACTION_POOL[0].to_minerl_dict()
+            action_to_record = -1  # Use -1 to signify an idle/noop action in the recording
+        else:
+            minerl_action = enabled_actions[discrete_action_idx].to_minerl_dict()
+            action_to_record = discrete_action_idx
 
         # Step environment with BOTH discrete index and MineRL dict
         # Recorder will save the discrete index
-        step_res = env.step((discrete_action_idx, minerl_action))
-        done = (len(step_res) == 5 and (step_res[2] or step_res[3])) or (len(step_res) == 4 and step_res[2])
+        obs, reward, done, info = env.step((action_to_record, minerl_action))
 
         if done:
             env.reset()

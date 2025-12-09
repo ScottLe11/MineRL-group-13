@@ -144,9 +144,12 @@ DISCRETE_ACTION_POOL = {
     8: DiscreteAction(
         index=8,
         name='turn_left_45',
+        #name='turn_left_15',
         duration=1,
-        to_minerl_dict=lambda: _create_camera(0.0, -45.0),
+        to_minerl_dict=lambda: _create_camera(0.0, -11.25),
         display_name='TL45',
+        #to_minerl_dict=lambda: _create_camera(0.0, -15.0),
+        #display_name='TL15',
         default_key='1'
     ),
     9: DiscreteAction(
@@ -177,7 +180,7 @@ DISCRETE_ACTION_POOL = {
         index=12,
         name='turn_right_45',
         duration=1,
-        to_minerl_dict=lambda: _create_camera(0.0, 45.0),
+        to_minerl_dict=lambda: _create_camera(0.0, 11.25),
         display_name='TR45',
         default_key='4'
     ),
@@ -280,7 +283,7 @@ DISCRETE_ACTION_POOL = {
     25: DiscreteAction(
         index=25,
         name='attack_10',
-        duration=10,  # Attack for 10 agent steps
+        duration=20,  # Attack for 10 agent steps
         to_minerl_dict=_create_attack,
         display_name='ATK10',
         default_key='h'

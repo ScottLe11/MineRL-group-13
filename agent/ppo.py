@@ -418,23 +418,54 @@ class PPOAgent:
     
     def save(self, path: str):
         """Save agent state."""
-        torch.save({
-            'policy_state_dict': self.policy.state_dict(),
+        progress_settings = {
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
             'update_count': self.update_count,
             'episode_count': self.episode_count,
             'action_counts': self.action_counts,
             'last_actions': self.last_actions,
+            'learning_rate': self.learning_rate
+        }
+
+        network = {
+            'policy_state_dict': self.policy.state_dict()
+        }
+
+        torch.save({
+            'progress_settings': progress_settings,
+            'network': network,
         }, path)
         print(f"PPO agent saved to {path}")
     
     def load(self, path: str):
         """Load agent state with robust action mismatch handling and hyperparam override."""
         checkpoint = torch.load(path, map_location=self.device)
+
+        if 'network' in checkpoint and 'progress_settings' in checkpoint:
+            print("Loading new format checkpoint...")
+            network_state = checkpoint['network']
+            settings = checkpoint['progress_settings']
+        else:
+            print("Loading old format checkpoint...")
+            network_state = checkpoint
+            settings = checkpoint
         
+        # Cross-Policy Check: DQN -> PPO
+        if 'policy_state_dict' not in network_state and 'q_network_state_dict' in network_state:
+            print(f"\nCross-Policy Load Detected: DQN Checkpoint -> PPO Agent")
+            dqn_state = network_state['q_network_state_dict']
+            ppo_constructed_state = {}
+            
+            for k, v in dqn_state.items():
+                if any(scope in k for scope in ['cnn.', 'attention.', 'scalar_network.']):
+                    ppo_constructed_state[k] = v
+                        
+            network_state['policy_state_dict'] = ppo_constructed_state
+            settings = {}
+
         # 1. Load Policy with Shape Checking (Action space change handling)
-        saved_state = checkpoint['policy_state_dict']
+        saved_state = network_state.get('policy_state_dict', {})
         current_state = self.policy.state_dict()
         new_state = {}
         
@@ -446,13 +477,12 @@ class PPOAgent:
                     mismatch_detected = True
                     print(f"⚠️  Shape mismatch for {k}: saved {saved_v.shape}, current {v.shape}")
                     
-                    # Safe slice/pad
-                    min_dim = min(saved_v.shape[0], v.shape[0])
+                    slices = tuple(slice(0, min(ds, dc)) for ds, dc in zip(saved_v.shape, v.shape))
                     
-                    if len(v.shape) == 1:
-                        v[:min_dim] = saved_v[:min_dim]
-                    elif len(v.shape) >= 2:
-                         v[:min_dim, ...] = saved_v[:min_dim, ...]
+                    try:
+                        v[slices] = saved_v[slices]
+                    except Exception as e:
+                         print(f"Could not auto-slice {k}: {e}. Keeping random init.")
                          
                     new_state[k] = v
                 else:
@@ -466,9 +496,9 @@ class PPOAgent:
             print("✅ Handled action space mismatch by preserving matching weights.")
 
         # 2. Load Optimizer (Reset if failure, force LR)
-        if 'optimizer_state_dict' in checkpoint:
+        if 'optimizer_state_dict' in settings:
             try:
-                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                self.optimizer.load_state_dict(settings['optimizer_state_dict'])
                 
                 # FORCE update learning rate
                 for param_group in self.optimizer.param_groups:
@@ -479,18 +509,18 @@ class PPOAgent:
                 self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learning_rate)
 
         # 3. Counters
-        self.step_count = checkpoint['step_count']
-        self.update_count = checkpoint['update_count']
-        self.episode_count = checkpoint.get('episode_count', 0)
+        self.step_count = settings.get('step_count', 0)
+        self.update_count = settings.get('update_count', 0)
+        self.episode_count = settings.get('episode_count', 0)
         
         # Load action tracking if available 
-        saved_counts = checkpoint.get('action_counts', [])
+        saved_counts = settings.get('action_counts', [])
         if len(saved_counts) == self.num_actions:
             self.action_counts = saved_counts
         else:
             self.action_counts = [0] * self.num_actions # Reset if size changed
 
-        self.last_actions = checkpoint.get('last_actions', [])
+        self.last_actions = settings.get('last_actions', [])
 
 
 if __name__ == "__main__":

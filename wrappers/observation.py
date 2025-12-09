@@ -11,6 +11,8 @@ This wrapper tracks and exposes:
 import gym
 import numpy as np
 
+from crafting.crafting_utils import get_basic_inventory_counts
+
 
 class ObservationWrapper(gym.Wrapper):
     """
@@ -57,6 +59,13 @@ class ObservationWrapper(gym.Wrapper):
         base_spaces['place_table_safe'] = gym.spaces.Box(
             low=0.0, high=1.0, shape=(1,), dtype=np.float32
         )
+
+        # Inventory Scalars 
+        base_spaces['inv_logs'] = gym.spaces.Box(low=0, high=640, shape=(1,), dtype=np.float32)
+        base_spaces['inv_planks'] = gym.spaces.Box(low=0, high=640, shape=(1,), dtype=np.float32)
+        base_spaces['inv_sticks'] = gym.spaces.Box(low=0, high=640, shape=(1,), dtype=np.float32)
+        base_spaces['inv_table'] = gym.spaces.Box(low=0, high=640, shape=(1,), dtype=np.float32)
+        base_spaces['inv_axe'] = gym.spaces.Box(low=0, high=640, shape=(1,), dtype=np.float32)
 
         self.observation_space = gym.spaces.Dict(base_spaces)
     
@@ -109,12 +118,22 @@ class ObservationWrapper(gym.Wrapper):
         # Compute place_table_safe using current pitch and pov 
         place_table_safe = self._estimate_place_table_safe(pov, normalized_pitch)
 
+        # Pass the full 'obs' which contains the 'inventory' dict
+        counts = get_basic_inventory_counts(obs)
+
         # pov and add scalar features
         extended_obs['pov'] = pov
         extended_obs['time_left'] = np.array([time_normalized], dtype=np.float32)
         extended_obs['yaw'] = np.array([normalized_yaw], dtype=np.float32)
         extended_obs['pitch'] = np.array([normalized_pitch], dtype=np.float32)
         extended_obs['place_table_safe'] = np.array([place_table_safe], dtype=np.float32)
+
+        # Inventory Scalars
+        extended_obs['inv_logs'] = np.array([float(counts['logs'])], dtype=np.float32)
+        extended_obs['inv_planks'] = np.array([float(counts['planks'])], dtype=np.float32)
+        extended_obs['inv_sticks'] = np.array([float(counts['sticks'])], dtype=np.float32)
+        extended_obs['inv_table'] = np.array([float(counts['crafting_table'])], dtype=np.float32)
+        extended_obs['inv_axe'] = np.array([float(counts['wooden_axe'])], dtype=np.float32)
 
         return extended_obs
 
@@ -160,23 +179,32 @@ if __name__ == "__main__":
         def __init__(self):
             self.observation_space = gym.spaces.Dict({
                 'pov': gym.spaces.Box(low=0, high=255, shape=(4, 84, 84), dtype=np.uint8),
-                'inventory': gym.spaces.Box(low=0, high=64, shape=(3,), dtype=np.int32),
+                'inventory': gym.spaces.Dict({
+                    'oak_log': gym.spaces.Box(low=0, high=64, shape=(1,), dtype=np.int32),
+                    'stick': gym.spaces.Box(low=0, high=64, shape=(1,), dtype=np.int32),
+                    'wooden_axe': gym.spaces.Box(low=0, high=64, shape=(1,), dtype=np.int32),
+                })
             })
-            self.action_space = gym.spaces.Discrete(23)
+            self.action_space = gym.spaces.Discrete(21)
             self.step_count = 0
         
         def reset(self):
             self.step_count = 0
             return {
                 'pov': np.zeros((4, 84, 84), dtype=np.uint8),
-                'inventory': np.array([0, 0, 0], dtype=np.int32),
+                'inventory': {
+                    'oak_log': 0, 
+                    'wooden_axe': 0,
+                    'stick': 0, 
+                    'planks': 0
+                }
             }
         
         def step(self, action):
             self.step_count += 1
             obs = {
                 'pov': np.random.randint(0, 256, (4, 84, 84), dtype=np.uint8),
-                'inventory': np.array([1, 2, 3], dtype=np.int32),
+                'inventory': {'oak_log': 5, 'wooden_axe': 2, 'stick': 2}
             }
             reward = -0.001
             done = self.step_count >= 100
@@ -190,11 +218,14 @@ if __name__ == "__main__":
     print(f"  After reset:")
     print(f"    Keys: {list(obs.keys())}")
     print(f"    POV shape: {obs['pov'].shape}")
-    print(f"    Inventory: {obs['inventory']}")
     print(f"    Time Left: {obs['time_left'][0]:.3f} (should be 1.0)")
     print(f"    Yaw: {obs['yaw'][0]:.3f}")
     print(f"    Pitch: {obs['pitch'][0]:.3f}")
     print(f"    place_table_safe: {obs['place_table_safe'][0]:.3f}")
+
+    assert obs['inv_logs'][0] == 0.0
+    assert obs['inv_sticks'][0] == 0.0
+    assert obs['inv_axe'][0] == 0.0
 
     assert obs['time_left'][0] == 1.0, "Time left should be 1.0 at episode start"
     assert obs['yaw'][0] == 0.0, "Yaw should be 0.0 at reset"
@@ -203,6 +234,10 @@ if __name__ == "__main__":
     # Test episode step updates
     for _ in range(50):
         obs, _, _, _ = wrapped_env.step(0)
+
+    assert obs['inv_logs'][0] == 5.0
+    assert obs['inv_sticks'][0] == 2.0
+    assert obs['inv_axe'][0] == 2.0
 
     print(f"\n  After 50 episode steps:")
     print(f"    Time Left: {obs['time_left'][0]:.3f} (should be ~0.5)")

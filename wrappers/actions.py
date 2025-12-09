@@ -24,6 +24,7 @@ from crafting import (
     craft_table_in_inventory,
     craft_sticks_in_inventory,   
     craft_wooden_axe,
+    craft_table_then_axe,
     close_table_gui_if_open,
     GuiClicker
 )
@@ -33,36 +34,35 @@ from crafting import (
 # ACTION DEFINITIONS
 # =============================================================================
 
-# Movement primitives (0-6): executed for 4 frames each
+# Movement primitives (0-5): executed for 4 frames each
 MOVEMENT_PRIMITIVES = [
     {},               # 0: noop
-    {'forward': 1},   # 1: forward
+    {'forward': 1, 'jump': 1},   # 1: forward and jump
     {'back': 1},      # 2: back
     {'right': 1},     # 3: strafe right
     {'left': 1},      # 4: strafe left
-    {'jump': 1},      # 5: jump
-    {'attack': 1},    # 6: attack
+    {'attack': 1},    # 5: attack
 ]
 
-# Camera primitives (7-18): (yaw_delta, pitch_delta) per frame × 4 frames
+# Camera primitives (6-17): (yaw_delta, pitch_delta) per frame × 4 frames
 # These are ALSO primitives - they just modify camera instead of movement
 CAMERA_PRIMITIVES = [
     # Turn left (negative yaw)
-    (-7.5, 0),    # 7: turn_left_30  (7.5 * 4 = 30°)
-    (-11.25, 0),  # 8: turn_left_45  (11.25 * 4 = 45°)
-    (-15.0, 0),   # 9: turn_left_60  (15 * 4 = 60°)
-    (-22.5, 0),   # 10: turn_left_90 (22.5 * 4 = 90°)
+    (-7.5, 0),    # 6: turn_left_30  (7.5 * 4 = 30°)
+    (-11.25, 0),  # 7: turn_left_45  (11.25 * 4 = 45°)
+    (-15.0, 0),   # 8: turn_left_60  (15 * 4 = 60°)
+    (-22.5, 0),   # 9: turn_left_90 (22.5 * 4 = 90°)
     # Turn right (positive yaw)
-    (7.5, 0),     # 11: turn_right_30
-    (11.25, 0),   # 12: turn_right_45
-    (15.0, 0),    # 13: turn_right_60
-    (22.5, 0),    # 14: turn_right_90
+    (7.5, 0),     # 10: turn_right_30
+    (11.25, 0),   # 11: turn_right_45
+    (15.0, 0),    # 12: turn_right_60
+    (22.5, 0),    # 13: turn_right_90
     # Look up (negative pitch in MineRL)
-    (0, -3.0),    # 15: look_up_12  (3 * 4 = 12°)
-    (0, -5.0),    # 16: look_up_20  (5 * 4 = 20°)
+    (0, -3.0),    # 14: look_up_12  (3 * 4 = 12°)
+    (0, -5.0),    # 15: look_up_20  (5 * 4 = 20°)
     # Look down (positive pitch in MineRL)
-    (0, 3.0),     # 17: look_down_12
-    (0, 5.0),     # 18: look_down_20
+    (0, 3.0),     # 16: look_down_12
+    (0, 5.0),     # 17: look_down_20
 ]
 
 # Combined primitives for easy indexing
@@ -75,31 +75,30 @@ PRIMITIVE_ACTIONS = MOVEMENT_PRIMITIVES
 CAMERA_ACTIONS = CAMERA_PRIMITIVES
 
 # Macro action indices (base set)
-MACRO_CRAFT_PLANKS = 19
-MACRO_MAKE_TABLE = 20
-MACRO_CRAFT_STICKS = 21
-MACRO_CRAFT_AXE = 22
+MACRO_CRAFT_PLANKS = 18
+MACRO_CRAFT_STICKS = 19
+MACRO_CRAFT_TABLE_AND_AXE = 20
 
 # Extended action indices (can be added to action pool)
-MACRO_CRAFT_ENTIRE_AXE = 23  # Full pipeline: planks + sticks in inventory -> table -> axe
-ACTION_ATTACK_5 = 24         # Attack for 5 steps (20 frames)
-ACTION_ATTACK_10 = 25        # Attack for 10 steps (40 frames)
+MACRO_CRAFT_ENTIRE_AXE = 21  # Full pipeline: planks + sticks in inventory -> table -> axe
+ACTION_ATTACK_5 = 22         # Attack for 5 steps (20 frames)
+ACTION_ATTACK_10 = 23        # Attack for 10 steps (40 frames)
 
 # Action names for debugging (full action pool)
 ACTION_NAMES_POOL = [
-    'noop', 'forward', 'back', 'right', 'left', 'jump', 'attack',
+    'noop', 'forward_jump', 'back', 'right', 'left', 'attack',
     'turn_left_30', 'turn_left_45', 'turn_left_60', 'turn_left_90',
     'turn_right_30', 'turn_right_45', 'turn_right_60', 'turn_right_90',
     'look_up_12', 'look_up_20', 'look_down_12', 'look_down_20',
-    'craft_planks', 'make_table', 'craft_sticks', 'craft_axe',
-    'craft_entire_axe', 'attack_5', 'attack_10',
+    'craft_planks', 'craft_sticks', 'craft_table_and_axe',
+    'craft_entire_axe', 'attack_5', 'attack_10', 
 ]
 
 # Default action names (23 actions - backward compatible)
-ACTION_NAMES = ACTION_NAMES_POOL[:23]
+ACTION_NAMES = ACTION_NAMES_POOL[:21]
 
-NUM_ACTIONS = 23  # Default (backward compatible)
-NUM_ACTIONS_POOL = 26  # Total actions in the pool
+NUM_ACTIONS = 21  # Default (backward compatible)
+NUM_ACTIONS_POOL = 24  # Total actions in the pool
 FRAMES_PER_ACTION = 4  # Each agent decision = 4 MineRL frames
 
 
@@ -290,12 +289,10 @@ class ExtendedActionWrapper(ActionWrapper):
         try:
             if action_index == MACRO_CRAFT_PLANKS:
                 return self._macro_craft_planks()
-            elif action_index == MACRO_MAKE_TABLE:
-                return self._macro_make_table()
             elif action_index == MACRO_CRAFT_STICKS:
                 return self._macro_craft_sticks()
-            elif action_index == MACRO_CRAFT_AXE:
-                return self._macro_craft_axe()
+            elif action_index == MACRO_CRAFT_TABLE_AND_AXE:
+                return self._macro_craft_table_and_axe()
             elif action_index == MACRO_CRAFT_ENTIRE_AXE:
                 return self._macro_craft_entire_axe()
             else:
@@ -322,6 +319,7 @@ class ExtendedActionWrapper(ActionWrapper):
         
         return self._finalize_macro(tracer, 'craft_planks', aborted=not ok)
     
+    '''
     def _macro_make_table(self):
         """
         Make and place crafting table.
@@ -340,7 +338,8 @@ class ExtendedActionWrapper(ActionWrapper):
         )
         
         return self._finalize_macro(tracer, 'make_table', aborted=not ok)
-    
+    ''' 
+
     def _macro_craft_sticks(self):
         """Craft sticks using the 2x2 inventory crafting grid."""
         tracer = _RewardTracer(self.env)
@@ -356,6 +355,7 @@ class ExtendedActionWrapper(ActionWrapper):
         
         return self._finalize_macro(tracer, 'craft_sticks', aborted=not ok)
     
+    '''
     def _macro_craft_axe(self):
         """Craft wooden axe in the 3x3 crafting table."""
         tracer = _RewardTracer(self.env)
@@ -370,6 +370,24 @@ class ExtendedActionWrapper(ActionWrapper):
         )
 
         return self._finalize_macro(tracer, 'craft_axe', aborted=not ok)
+    ''' 
+
+    def _macro_craft_table_and_axe(self):
+        """
+        Combined Macro: Make Table + Place Table + Make Axe.
+        """
+        tracer = _RewardTracer(self.env)
+        helper = GuiClicker(tracer, width=self.gui_size[0], height=self.gui_size[1])
+
+        obs_for_check = self._get_obs_for_macro()
+
+        ok = craft_table_then_axe(
+            tracer, helper,
+            width=self.gui_size[0], height=self.gui_size[1],
+            obs=obs_for_check,
+        )
+
+        return self._finalize_macro(tracer, 'craft_table_and_axe', aborted=not ok)
 
     def _macro_craft_entire_axe(self):
         """
@@ -606,7 +624,7 @@ def get_action_space_info() -> dict:
         'movement_primitives': list(range(NUM_MOVEMENT_PRIMITIVES)),  # 0-6
         'camera_primitives': list(range(NUM_MOVEMENT_PRIMITIVES, NUM_PRIMITIVES)),  # 7-18
         # Macros (multi-step sequences)
-        'macros': [MACRO_CRAFT_PLANKS, MACRO_MAKE_TABLE, MACRO_CRAFT_STICKS, MACRO_CRAFT_AXE],
+        'macros': [MACRO_CRAFT_PLANKS, MACRO_CRAFT_STICKS, MACRO_CRAFT_TABLE_AND_AXE],
         'action_names': ACTION_NAMES,
     }
 

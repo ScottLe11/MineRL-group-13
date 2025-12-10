@@ -1,10 +1,10 @@
 """
 Extended Action Wrapper for the MineRL Tree-Chopping RL Agent.
 
-Provides 23 discrete actions:
+Provides 22 discrete actions:
 - 0-6: Movement primitives (noop, forward, back, right, left, jump, attack)
 - 7-18: Camera primitives (turn left/right at various angles, look up/down)
-- 19-22: Crafting macros (planks, make_table, sticks, axe)
+- 19-21: Crafting macros (planks, sticks, craft_table_and_axe)
 
 All primitives (0-18) work identically: execute for 4 frames, accumulate rewards.
 The only difference is the action dict content (movement vs camera deltas).
@@ -37,32 +37,33 @@ from crafting import (
 # Movement primitives (0-5): executed for 4 frames each
 MOVEMENT_PRIMITIVES = [
     {},               # 0: noop
-    {'forward': 1, 'jump': 1},   # 1: forward and jump
+    {'forward': 1},   # 1: forward
     {'back': 1},      # 2: back
     {'right': 1},     # 3: strafe right
     {'left': 1},      # 4: strafe left
-    {'attack': 1},    # 5: attack
+    {'jump': 1, 'forward': 1},      # 5: jump forward
+    {'attack': 1},    # 6: attack
 ]
 
-# Camera primitives (6-17): (yaw_delta, pitch_delta) per frame × 4 frames
+# Camera primitives (7-18): (yaw_delta, pitch_delta) per frame × 4 frames
 # These are ALSO primitives - they just modify camera instead of movement
 CAMERA_PRIMITIVES = [
     # Turn left (negative yaw)
-    (-7.5, 0),    # 6: turn_left_30  (7.5 * 4 = 30°)
-    (-11.25, 0),  # 7: turn_left_45  (11.25 * 4 = 45°)
-    (-15.0, 0),   # 8: turn_left_60  (15 * 4 = 60°)
-    (-22.5, 0),   # 9: turn_left_90 (22.5 * 4 = 90°)
+    (-7.5, 0),    # 7: turn_left_30  (7.5 * 4 = 30°)
+    (-11.25, 0),  # 8: turn_left_45  (11.25 * 4 = 45°)
+    (-15.0, 0),   # 9: turn_left_60  (15 * 4 = 60°)
+    (-22.5, 0),   # 10: turn_left_90 (22.5 * 4 = 90°)
     # Turn right (positive yaw)
-    (7.5, 0),     # 10: turn_right_30
-    (11.25, 0),   # 11: turn_right_45
-    (15.0, 0),    # 12: turn_right_60
-    (22.5, 0),    # 13: turn_right_90
+    (7.5, 0),     # 11: turn_right_30
+    (11.25, 0),   # 12: turn_right_45
+    (15.0, 0),    # 13: turn_right_60
+    (22.5, 0),    # 14: turn_right_90
     # Look up (negative pitch in MineRL)
-    (0, -3.0),    # 14: look_up_12  (3 * 4 = 12°)
-    (0, -5.0),    # 15: look_up_20  (5 * 4 = 20°)
+    (0, -3.0),    # 15: look_up_12  (3 * 4 = 12°)
+    (0, -5.0),    # 16: look_up_20  (5 * 4 = 20°)
     # Look down (positive pitch in MineRL)
-    (0, 3.0),     # 16: look_down_12
-    (0, 5.0),     # 17: look_down_20
+    (0, 3.0),     # 17: look_down_12
+    (0, 5.0),     # 18: look_down_20
 ]
 
 # Combined primitives for easy indexing
@@ -75,18 +76,18 @@ PRIMITIVE_ACTIONS = MOVEMENT_PRIMITIVES
 CAMERA_ACTIONS = CAMERA_PRIMITIVES
 
 # Macro action indices (base set)
-MACRO_CRAFT_PLANKS = 18
-MACRO_CRAFT_STICKS = 19
-MACRO_CRAFT_TABLE_AND_AXE = 20
+MACRO_CRAFT_PLANKS = 19
+MACRO_CRAFT_STICKS = 20
+MACRO_CRAFT_TABLE_AND_AXE = 21
 
 # Extended action indices (can be added to action pool)
-MACRO_CRAFT_ENTIRE_AXE = 21  # Full pipeline: planks + sticks in inventory -> table -> axe
-ACTION_ATTACK_5 = 22         # Attack for 5 steps (20 frames)
-ACTION_ATTACK_10 = 23        # Attack for 10 steps (40 frames)
+MACRO_CRAFT_ENTIRE_AXE = 22  # Full pipeline: planks + sticks in inventory -> table -> axe
+ACTION_ATTACK_5 = 23         # Attack for 5 steps (20 frames)
+ACTION_ATTACK_10 = 24        # Attack for 10 steps (40 frames)
 
 # Action names for debugging (full action pool)
 ACTION_NAMES_POOL = [
-    'noop', 'forward_jump', 'back', 'right', 'left', 'attack',
+    'noop', 'forward', 'back', 'right', 'left', 'jump','attack',
     'turn_left_30', 'turn_left_45', 'turn_left_60', 'turn_left_90',
     'turn_right_30', 'turn_right_45', 'turn_right_60', 'turn_right_90',
     'look_up_12', 'look_up_20', 'look_down_12', 'look_down_20',
@@ -94,18 +95,18 @@ ACTION_NAMES_POOL = [
     'craft_entire_axe', 'attack_5', 'attack_10', 
 ]
 
-# Default action names (23 actions - backward compatible)
-ACTION_NAMES = ACTION_NAMES_POOL[:21]
+# Default action names (22 actions - backward compatible)
+ACTION_NAMES = ACTION_NAMES_POOL[:22]
 
-NUM_ACTIONS = 21  # Default (backward compatible)
-NUM_ACTIONS_POOL = 24  # Total actions in the pool
+NUM_ACTIONS = 22  # Default (backward compatible)
+NUM_ACTIONS_POOL = 25  # Total actions in the pool
 FRAMES_PER_ACTION = 4  # Each agent decision = 4 MineRL frames
 
 
 class ExtendedActionWrapper(ActionWrapper):
     """
-    Extended action wrapper with 23 discrete actions.
-    
+    Extended action wrapper with 22 discrete actions.
+
     Each action executes for 4 MineRL frames (200ms at 20Hz).
     Rewards are accumulated across frames (step penalty already applied per frame by RewardWrapper).
     Camera movements are tracked for the ObservationWrapper.
@@ -147,7 +148,7 @@ class ExtendedActionWrapper(ActionWrapper):
         Execute action for 4 frames and accumulate rewards.
 
         Args:
-            action_index: The discrete action index (0-22 for base, up to 25 for extended).
+            action_index: The discrete action index (0-21 for base, up to 24 for extended).
 
         Returns:
             Tuple of (observation, accumulated_reward, done, info).
@@ -484,37 +485,32 @@ class ConfigurableActionWrapper(ExtendedActionWrapper):
     Configurable action wrapper that allows selecting which actions to include
     from the full action pool.
 
-    The action pool consists of 26 actions (indices 0-25):
+    The action pool consists of 25 actions (indices 0-24):
     - 0-6: Movement primitives (noop, forward, back, right, left, jump, attack)
     - 7-18: Camera primitives (turn left/right, look up/down at various angles)
-    - 19-22: Basic crafting macros (planks, make_table, sticks, axe)
-    - 23: craft_entire_axe (full pipeline: planks -> sticks -> table -> axe)
-    - 24: attack_5 (attack for 5 steps = 20 frames)
-    - 25: attack_10 (attack for 10 steps = 40 frames)
+    - 19-21: Basic crafting macros (planks, sticks, craft_table_and_axe)
+    - 22: craft_entire_axe (full pipeline: planks -> sticks -> table -> axe)
+    - 23: attack_5 (attack for 5 steps = 20 frames)
+    - 24: attack_10 (attack for 10 steps = 40 frames)
 
     You can enable/disable ANY action(s) like switches - any combination works!
 
     Examples:
-        # Use only base 23 actions
-        env = ConfigurableActionWrapper(env, enabled_actions=list(range(23)))
+        # Use only base 22 actions
+        env = ConfigurableActionWrapper(env, enabled_actions=list(range(22)))
 
         # Use base actions + craft_entire_axe
-        env = ConfigurableActionWrapper(env, enabled_actions=list(range(23)) + [23])
+        env = ConfigurableActionWrapper(env, enabled_actions=list(range(22)) + [22])
 
         # Use base actions + extended attacks
-        env = ConfigurableActionWrapper(env, enabled_actions=list(range(23)) + [24, 25])
+        env = ConfigurableActionWrapper(env, enabled_actions=list(range(22)) + [23, 24])
 
         # Use everything
-        env = ConfigurableActionWrapper(env, enabled_actions=list(range(26)))
+        env = ConfigurableActionWrapper(env, enabled_actions=list(range(25)))
 
         # Custom: Only movement + attack + one camera turn + craft_entire_axe
-        env = ConfigurableActionWrapper(env, enabled_actions=[0, 1, 2, 6, 11, 23])
+        env = ConfigurableActionWrapper(env, enabled_actions=[0, 1, 2, 6, 12, 22])
 
-        # Custom: No movement, only camera + attacks
-        env = ConfigurableActionWrapper(env, enabled_actions=[0, 7, 8, 9, 10, 11, 12, 13, 14, 24, 25])
-
-        # Minimal: Only forward, attack, and one camera angle
-        env = ConfigurableActionWrapper(env, enabled_actions=[1, 6, 11])
 
         # Any arbitrary combination works - the wrapper handles all the mapping!
     """
@@ -523,8 +519,8 @@ class ConfigurableActionWrapper(ExtendedActionWrapper):
         """
         Args:
             env: The wrapped environment.
-            enabled_actions: List of action indices to include (0-25).
-                           If None, uses all 26 actions.
+            enabled_actions: List of action indices to include (0-24).
+                           If None, uses all 25 actions.
             logs_to_convert: Number of logs to convert in crafting macros.
             gui_size: GUI dimensions for crafting macros.
         """

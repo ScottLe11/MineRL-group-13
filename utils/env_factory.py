@@ -29,27 +29,27 @@ def parse_action_space_config(action_config: dict) -> list:
         action_config: Action space configuration dict from config.yaml
 
     Returns:
-        List of action indices to enable (0-25)
+        List of action indices to enable (0-24)
     """
     preset = action_config.get('preset', 'base')
 
     if preset == 'base':
-        # Base 23 actions (0-22)
-        return list(range(23))
+        # Base 22 actions (0-21)
+        return list(range(22))
     elif preset == 'assisted':
         # Assisted learning preset: curated action set
         # Movement (0-6) + key camera angles + craft_entire_axe + extended attacks
-        return [0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 13, 15, 17, 23, 24, 25]
+        return [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 13, 14, 16, 18, 22, 23, 24]
     elif preset == 'custom':
         # Use custom enabled_actions list
         enabled = action_config.get('enabled_actions', [])
         if not enabled:
-            print("Warning: preset='custom' but enabled_actions is empty. Defaulting to base 23 actions.")
-            return list(range(23))
+            print("Warning: preset='custom' but enabled_actions is empty. Defaulting to base 22 actions.")
+            return list(range(22))
         return enabled
     else:
-        print(f"Warning: Unknown action preset '{preset}'. Defaulting to base 23 actions.")
-        return list(range(23))
+        print(f"Warning: Unknown action preset '{preset}'. Defaulting to base 22 actions.")
+        return list(range(22))
 
 
 def register_custom_env(env_id: str, curriculum_config: dict, max_episode_steps: int = 8000):

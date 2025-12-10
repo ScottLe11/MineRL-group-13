@@ -50,7 +50,7 @@ environment:
   curriculum:
     spawn_type: "random"             # "random" or "near_tree" (near_tree needs custom handler)
     with_logs: 0                    # Number of starting logs (0-10)
-    with_axe: false                  # Start with wooden axe equipped
+    with_axe: true                  # Start with wooden axe equipped
 
 # =============================================================================
 # NETWORK
@@ -69,7 +69,7 @@ network:
   # - spatial: Pure spatial attention (learns where to look)
   # - cbam: Combined channel + spatial (full CBAM module, most comprehensive)
   # - treechop_bias: Spatial attention biased toward screen center and hotbar
-  attention: "cbam"
+  attention: "treechop_bias"
   
   # Scalar network (optional)
   use_scalar_network: true            # Enable extra FC layer for scalar processing
@@ -97,7 +97,7 @@ action_space:
   # Custom action list (only used if preset is "custom")
   # Example: [0, 1, 2, 6, 7, 8, 23] would include only noop, forward, back,
   #          attack, turn_left_30, turn_left_45, and craft_entire_axe
-  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 14, 16, 18, 19, 20]
+  enabled_actions: [1,6,7,11,14,16]
 
 # =============================================================================
 # DQN AGENT
@@ -145,7 +145,7 @@ training:
   # Training duration (in EPISODES, not steps)
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
-  num_episodes: 2100                  # Total episodes to train
+  num_episodes: 3000                  # Total episodes to train
   train_freq: 5                      # Train every N agent steps
   
   # Logging & Saving (in episodes)

@@ -49,7 +49,7 @@ environment:
   # Curriculum (starting conditions) - see config/CURRICULUM_LEARNING.md
   curriculum:
     spawn_type: "random"             # "random" or "near_tree" (near_tree needs custom handler)
-    with_logs: 0                    # Number of starting logs (0-10)
+    with_logs: 5                    # Number of starting logs (0-10)
     with_axe: false                  # Start with wooden axe equipped
 
 # =============================================================================
@@ -177,7 +177,7 @@ ppo:
   gamma: 0.99                        # Discount factor
   gae_lambda: 0.95                   # GAE lambda
   clip_epsilon: 0.2                  # PPO clipping parameter
-  entropy_coef: 0.0                 # Entropy bonus
+  entropy_coef: 0.015                 # Entropy bonus
   value_coef: 0.5                    # Value loss coefficient
   max_grad_norm: 0.5                 # Gradient clipping
   n_steps: 1024                      # Steps per rollout

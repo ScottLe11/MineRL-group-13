@@ -19,13 +19,51 @@ Build a Deep Reinforcement Learning agent that learns to **efficiently chop tree
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.10
-- Java JDK 8 (required for MineRL)
+- Python 3.9
+- Anaconda
+- Homebrew
 
 ### Installation
+#### Mac Users Installation Guide
 ```bash
+# Java JDK 8 (required for MineRL)
+brew tap AdoptOpenJDK/openjdk
+brew install --cask adoptopenjdk8 
+export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
+
 # Create environment
-conda create -n minerl-env python=3.10
+conda create --platform osx-64 -n minerl-env python=3.9 -y
+conda activate minerl-env
+
+# Install dependencies
+git clone https://github.com/minerllabs/minerl.git
+sed -i .bak 's/3\.2\.1/3.3.1/' ./minerl/scripts/mcp_patch.diff
+cd minerl
+pip install .
+sed -i .bak s/'java -Xmx\$maxMem'/'java -Xmx\$maxMem -XstartOnFirstThread'/ ./minerl/MCP-Reborn/launchClient.sh
+sed -i .bak /'GLFW.glfwSetWindowIcon(this.handle, buffer);'/d ./minerl/MCP-Reborn/src/main/java/net/minecraft/client/MainWindow.java
+sed -i .bak '125,136s/^/\/\//' ./minerl/MCP-Reborn/src/main/java/net/minecraft/client/MainWindow.java
+cd minerl/MCP-Reborn && ./gradlew clean build shadowJar 
+cd ../../../
+cp -rf ./minerl/minerl/MCP-Reborn/* 
+TARGET_DIR=$(python -c "import site; print(site.getsitepackages()[0])")/minerl/MCP-Reborn/
+cp -rf ./minerl/minerl/MCP-Reborn/* "$TARGET_DIR"
+pip install -r requirements.txt
+
+# Set up biome
+chmod +x scripts/*.sh
+./scripts/setup_minerl_environment.sh
+```
+
+#### Window Users Installation Guide
+```bash
+# Java JDK 8 (required for MineRL)
+brew tap AdoptOpenJDK/openjdk
+brew install --cask adoptopenjdk8 
+export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
+
+# Create environment
+conda create -n minerl-env python=3.9
 conda activate minerl-env
 
 # Install dependencies
@@ -33,15 +71,22 @@ pip install -r requirements.txt
 
 # Install MineRL v1.0.2 from GitHub
 pip install git+https://github.com/minerllabs/minerl@v1.0.2
+
+# Set up biome
+chmod +x scripts/*.sh
+./scripts/setup_minerl_environment.sh
 ```
 
-### Run Training
+### Run Training 
 ```bash
-# DQN training (default)
-python scripts/train.py
+# Training (default)
+python -m scripts.train 
+
+# With window showing agent gameplay
+python -m scripts.train --render
 
 # With custom config
-python scripts/train.py --config config/config.yaml
+python -m scripts.train --config config/config.yaml
 ```
 
 ### Run Tests
@@ -51,7 +96,7 @@ pytest tests/ -v
 
 ### Evaluate a Checkpoint
 ```bash
-python scripts/evaluate.py --checkpoint checkpoints/final_model.pt --episodes 10
+python -m scripts.evaluate --checkpoint checkpoints/final_model.pt --episodes 10
 ```
 
 ---
@@ -61,16 +106,22 @@ python scripts/evaluate.py --checkpoint checkpoints/final_model.pt --episodes 10
 ```
 MineRL-group-13/
 ├── config/
-│   └── config.yaml              # All hyperparameters (DQN + PPO)
+│   ├── config.yaml              # All hyperparameters (DQN + PPO)
+│   └── recording_config.yaml    # Configures settings for recording human gameplay.
 │
 ├── wrappers/                    # Environment wrappers
 │   ├── vision.py                # Frame stacking (84x84 grayscale)
 │   ├── hold_attack.py           # Attack duration handling
 │   ├── reward.py                # Reward scaling
 │   ├── observation.py           # Time/yaw/pitch scalars
-│   └── actions.py               # 23 discrete actions
+│   ├── actions.py               # 21 discrete actions
+│   ├── discrete_actions.py      # 26 discrete actions.
+│   ├── frameskip.py             # Repeats actions over multiple frames
+│   └── recorder.py              # Saves gameplay trajectories to files
 │
 ├── networks/                    # Neural network architectures
+│   ├── attention.py             # Focuses on relevant screen regions
+│   ├── scalar_network.py.py     # Processes non-visual numeric data
 │   ├── cnn.py                   # SmallCNN (84x84 → 512 features)
 │   ├── dueling_head.py          # Dueling Q-value head
 │   ├── dqn_network.py           # Full DQN network
@@ -81,24 +132,50 @@ MineRL-group-13/
 │   ├── dqn.py                   # Double DQN agent
 │   └── ppo.py                   # PPO agent with GAE
 │
+├── best_model/                  # Contains the best checkpoints
+│   └── best_model_ppo_ep2050.pt # Best Checkpoint for ppo (training)
+│
 ├── utils/                       # Utilities
 │   ├── config.py                # Config loader
-│   └── logger.py                # TensorBoard logging
+│   ├── logger.py                # TensorBoard logging
+│   ├── agent_factory.py         # Creates and configures RL agents
+│   ├── env_factory.py           # Builds wrapped MineRL environments
+│   ├── run_grad_cam.py          # Generates Grad-CAM heatmap images
+│   ├── training_monitoring.py   # Manages real-time training plots
+│   ├── video_recorder.py        # Records gameplay at training milestones
+│   └── visualization.py         # Utilities for plots and heatmaps
 │
-├── scripts/                     # Entry points
-│   ├── train.py                 # Training script
-│   └── evaluate.py              # Evaluation script
+├── scripts/                        # Entry points
+│   ├── train.py                    # Training script
+│   ├── remove_unwanted_drops.sh    # Removes clutter item drops
+│   ├── restore_original_jar.sh     # Restores original MineRL JAR
+│   ├── setup_minerl_environment.sh # Configures biome and drops
+│   ├── setup_tall_birch_biome.sh   # Forces tall birch forest spawn
+│   ├── train.py                    # Training script
+│   └── visualize_attention.py      # Saves attention heatmaps from checkpoint
+│ 
+├── recording/                    # Manages action queuing logic
+│   └── action_queue.py           # Ensures actions finish before new ones start
+│ 
+├── trainers/                    # Contains training loops 
+│   ├── helpers.py                # Shared utilities and imitation learning
+│   ├── train_dqn.py              # DQN algorithm training loop
+│   └── train_ppo.py              # PPO algorithm training loop
 │
 ├── crafting/                    # Tested crafting macros
 │   ├── crafting_guide.py        # Craft planks/sticks/table/axe
+│   ├── crafting_utils.py        # Inventory parsing and GUI helpers
 │   └── gui_clicker.py           # GUI interaction helper
 │
 ├── tests/                       # Unit tests (47 tests)
 │   ├── test_networks.py
-│   ├── test_agent.py
+│   ├── recorder_gameplay.py
 │   └── test_wrappers.py
 │
-└── main.py                      # Original demo/reference
+├── pkl_parser.py                # Converts recordings into training data
+├── recorder_gameplay.py         # Records gameplay using standard controls
+├── treechop_spec.py             # Configurable MineRL tree-chopping environment
+└── main.py                      # Environment registration and vectorization setup
 ```
 
 ---

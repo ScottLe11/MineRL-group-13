@@ -69,7 +69,7 @@ network:
   # - spatial: Pure spatial attention (learns where to look)
   # - cbam: Combined channel + spatial (full CBAM module, most comprehensive)
   # - treechop_bias: Spatial attention biased toward screen center and hotbar
-  attention: "treechop_bias"
+  attention: "cbam"
   
   # Scalar network (optional)
   use_scalar_network: true            # Enable extra FC layer for scalar processing

@@ -31,7 +31,7 @@ environment:
   # - Each agent step = 4 frames = 200ms = 0.2 seconds
   # - So 1 second = 5 agent steps
   # - Recon: 20 seconds, Full: 60 seconds
-  episode_seconds: 25                # Episode duration (20s recon, 60s full)
+  episode_seconds: 60                # Episode duration (20s recon, 60s full)
   # max_steps is computed: episode_seconds * 5
 
   # Visual processing

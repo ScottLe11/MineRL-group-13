@@ -60,7 +60,7 @@ class DQNAgent:
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 3,
+        num_scalars: int = 9,
         learning_rate: float = 1e-4,
         gamma: float = 0.99,
         tau: float = 0.005,

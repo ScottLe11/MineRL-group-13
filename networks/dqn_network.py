@@ -17,7 +17,7 @@ class DQNNetwork(nn.Module):
 
     Architecture:
         Visual Input (4, 84, 84) -> CNN -> [Attention] -> (cnn_dim,)
-        Scalar Input (4,) -> concat -> (cnn_dim + 4,)
+        Scalar Input (9,) -> [ScalarNetwork] -> (scalar_dim,)
         Combined -> DuelingHead -> Q-values (num_actions,)
 
     Observation format expected:
@@ -26,7 +26,12 @@ class DQNNetwork(nn.Module):
             'time_left': (batch,) or (batch, 1) float,
             'yaw': (batch,) or (batch, 1) float,
             'pitch': (batch,) or (batch, 1) float,
-            'place_table_safe': (batch,) or (batch, 1) float
+            'place_table_safe': (batch,) or (batch, 1) float,
+            'inv_logs': (batch,) or (batch, 1) float,
+            'inv_planks': (batch,) or (batch, 1) float,
+            'inv_sticks': (batch,) or (batch, 1) float,
+            'inv_table': (batch,) or (batch, 1) float,
+            'inv_axe': (batch,) or (batch, 1) float
         }
     """
 
@@ -34,7 +39,7 @@ class DQNNetwork(nn.Module):
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 3,
+        num_scalars: int = 9,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
         use_scalar_network: bool = False,
@@ -45,7 +50,7 @@ class DQNNetwork(nn.Module):
         Args:
             num_actions: Number of discrete actions (default: 23)
             input_channels: Number of stacked frames (default: 4)
-            num_scalars: Number of scalar observations (default: 3, should be 4 for time_left, yaw, pitch, place_table_safe)
+            num_scalars: Number of scalar observations (default: 9 - time_left, yaw, pitch, place_table_safe, inv_logs, inv_planks, inv_sticks, inv_table, inv_axe)
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
             use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
@@ -123,7 +128,8 @@ class DQNNetwork(nn.Module):
         Forward pass through the network.
 
         Args:
-            obs: Dictionary with keys 'pov', 'time_left', 'yaw', 'pitch'
+            obs: Dictionary with keys 'pov', 'time_left', 'yaw', 'pitch', 'place_table_safe',
+                 'inv_logs', 'inv_planks', 'inv_sticks', 'inv_table', 'inv_axe'
                  OR a tensor for pov only (for simple testing)
             return_attention: If True, return attention maps (only if attention is enabled)
 
@@ -147,6 +153,11 @@ class DQNNetwork(nn.Module):
             yaw = obs.get('yaw', torch.zeros(batch_size, device=device))
             pitch = obs.get('pitch', torch.zeros(batch_size, device=device))
             place_table_safe = obs.get('place_table_safe', torch.zeros(batch_size, device=device))
+            inv_logs = obs.get('inv_logs', torch.zeros(batch_size, device=device))
+            inv_planks = obs.get('inv_planks', torch.zeros(batch_size, device=device))
+            inv_sticks = obs.get('inv_sticks', torch.zeros(batch_size, device=device))
+            inv_table = obs.get('inv_table', torch.zeros(batch_size, device=device))
+            inv_axe = obs.get('inv_axe', torch.zeros(batch_size, device=device))
 
             # Ensure scalars are (batch, 1)
             if time_left.dim() == 1:
@@ -157,8 +168,18 @@ class DQNNetwork(nn.Module):
                 pitch = pitch.unsqueeze(1)
             if place_table_safe.dim() == 1:
                 place_table_safe = place_table_safe.unsqueeze(1)
+            if inv_logs.dim() == 1:
+                inv_logs = inv_logs.unsqueeze(1)
+            if inv_planks.dim() == 1:
+                inv_planks = inv_planks.unsqueeze(1)
+            if inv_sticks.dim() == 1:
+                inv_sticks = inv_sticks.unsqueeze(1)
+            if inv_table.dim() == 1:
+                inv_table = inv_table.unsqueeze(1)
+            if inv_axe.dim() == 1:
+                inv_axe = inv_axe.unsqueeze(1)
 
-            scalars = torch.cat([time_left, yaw, pitch, place_table_safe], dim=1)  # (batch, 4)
+            scalars = torch.cat([time_left, yaw, pitch, place_table_safe, inv_logs, inv_planks, inv_sticks, inv_table, inv_axe], dim=1)  # (batch, 9)
 
         # Extract visual features
         # If using attention, apply it to conv features before FC layer
@@ -229,8 +250,8 @@ class DQNNetwork(nn.Module):
 if __name__ == "__main__":
     # Quick test
     print("Testing DQNNetwork...")
-    
-    network = DQNNetwork(num_actions=23, input_channels=4, num_scalars=3)
+
+    network = DQNNetwork(num_actions=23, input_channels=4, num_scalars=9)
     
     # Count parameters
     num_params = sum(p.numel() for p in network.parameters())

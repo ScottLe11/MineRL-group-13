@@ -114,6 +114,12 @@ class RolloutBuffer:
                 'time_left': np.array([self.observations[i]['time_left'] for i in batch_indices]),
                 'yaw': np.array([self.observations[i]['yaw'] for i in batch_indices]),
                 'pitch': np.array([self.observations[i]['pitch'] for i in batch_indices]),
+                'place_table_safe': np.array([self.observations[i]['place_table_safe'] for i in batch_indices]),
+                'inv_logs': np.array([self.observations[i]['inv_logs'] for i in batch_indices]),
+                'inv_planks': np.array([self.observations[i]['inv_planks'] for i in batch_indices]),
+                'inv_sticks': np.array([self.observations[i]['inv_sticks'] for i in batch_indices]),
+                'inv_table': np.array([self.observations[i]['inv_table'] for i in batch_indices]),
+                'inv_axe': np.array([self.observations[i]['inv_axe'] for i in batch_indices]),
             }
             
             yield (
@@ -143,7 +149,7 @@ class PPOAgent:
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 3,
+        num_scalars: int = 9,
         learning_rate: float = 3e-4,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,

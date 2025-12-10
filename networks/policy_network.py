@@ -33,7 +33,7 @@ class ActorCriticNetwork(nn.Module):
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 4,
+        num_scalars: int = 9,
         hidden_size: int = 512,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
@@ -45,7 +45,7 @@ class ActorCriticNetwork(nn.Module):
         Args:
             num_actions: Number of discrete actions
             input_channels: Number of stacked frames (default 4)
-            num_scalars: Number of scalar observations (time_left, yaw, pitch, place_table_safe)
+            num_scalars: Number of scalar observations (default: 9 - time_left, yaw, pitch, place_table_safe, inv_logs, inv_planks, inv_sticks, inv_table, inv_axe)
             hidden_size: Size of hidden layers
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
@@ -142,7 +142,8 @@ class ActorCriticNetwork(nn.Module):
         Forward pass returning policy logits and value.
 
         Args:
-            obs: Dict with 'pov', 'time_left', 'yaw', 'pitch' tensors
+            obs: Dict with 'pov', 'time_left', 'yaw', 'pitch', 'place_table_safe',
+                 'inv_logs', 'inv_planks', 'inv_sticks', 'inv_table', 'inv_axe' tensors
             return_attention: If True, return attention maps (only if attention is enabled)
 
         Returns:
@@ -176,8 +177,13 @@ class ActorCriticNetwork(nn.Module):
             obs['time_left'].view(-1),
             obs['yaw'].view(-1),
             obs['pitch'].view(-1),
-            obs['place_table_safe'].view(-1)
-        ], dim=1)  # (batch, num_scalars)
+            obs['place_table_safe'].view(-1),
+            obs['inv_logs'].view(-1),
+            obs['inv_planks'].view(-1),
+            obs['inv_sticks'].view(-1),
+            obs['inv_table'].view(-1),
+            obs['inv_axe'].view(-1)
+        ], dim=1)  # (batch, num_scalars=9)
 
         # Process scalars (optionally through scalar network)
         if self.scalar_network is not None:
@@ -240,6 +246,12 @@ if __name__ == "__main__":
         'time_left': torch.tensor([0.8, 0.5]),
         'yaw': torch.tensor([0.0, 0.5]),
         'pitch': torch.tensor([0.0, -0.2]),
+        'place_table_safe': torch.tensor([1.0, 0.0]),
+        'inv_logs': torch.tensor([5.0, 2.0]),
+        'inv_planks': torch.tensor([12.0, 8.0]),
+        'inv_sticks': torch.tensor([4.0, 2.0]),
+        'inv_table': torch.tensor([1.0, 0.0]),
+        'inv_axe': torch.tensor([1.0, 1.0])
     }
     
     logits, value = network(obs)

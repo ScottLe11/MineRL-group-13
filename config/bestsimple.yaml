@@ -97,7 +97,7 @@ action_space:
   # Custom action list (only used if preset is "custom")
   # Example: [0, 1, 2, 6, 7, 8, 23] would include only noop, forward, back,
   #          attack, turn_left_30, turn_left_45, and craft_entire_axe
-  enabled_actions: [1,6,7,11,14,16]
+  enabled_actions: [1,6,7,11,15,17]
 
 # =============================================================================
 # DQN AGENT

@@ -378,26 +378,41 @@ class DQNAgent:
         # Use numpy arrays to avoid "extremely slow" warning
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time': torch.tensor(np.array([state.get('time', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'time_left': torch.tensor(np.array([state.get('time_left', state.get('time', 0.0))], dtype=np.float32), dtype=torch.float32, device=self.device),
             'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
             'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'place_table_safe': torch.tensor(np.array([state.get('place_table_safe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device)
+            'place_table_safe': torch.tensor(np.array([state.get('place_table_safe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_logs': torch.tensor(np.array([state.get('inv_logs', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_planks': torch.tensor(np.array([state.get('inv_planks', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_sticks': torch.tensor(np.array([state.get('inv_sticks', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_table': torch.tensor(np.array([state.get('inv_table', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_axe': torch.tensor(np.array([state.get('inv_axe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device)
         }
     
     def _batch_states_to_tensor(self, states: list) -> Dict:
         """Convert list of state dicts to batched tensor dict."""
         povs = np.stack([s['pov'] for s in states])
-        times = np.array([s.get('time', 0.0) for s in states])
+        times = np.array([s.get('time_left', s.get('time', 0.0)) for s in states])
         yaws = np.array([s.get('yaw', 0.0) for s in states])
         pitches = np.array([s.get('pitch', 0.0) for s in states])
         place_table_safes = np.array([s.get('place_table_safe', 0.0) for s in states])
-        
+        inv_logs = np.array([s.get('inv_logs', 0.0) for s in states])
+        inv_planks = np.array([s.get('inv_planks', 0.0) for s in states])
+        inv_sticks = np.array([s.get('inv_sticks', 0.0) for s in states])
+        inv_table = np.array([s.get('inv_table', 0.0) for s in states])
+        inv_axe = np.array([s.get('inv_axe', 0.0) for s in states])
+
         return {
             'pov': torch.tensor(povs, dtype=torch.float32, device=self.device),
-            'time': torch.tensor(times, dtype=torch.float32, device=self.device),
+            'time_left': torch.tensor(times, dtype=torch.float32, device=self.device),
             'yaw': torch.tensor(yaws, dtype=torch.float32, device=self.device),
             'pitch': torch.tensor(pitches, dtype=torch.float32, device=self.device),
-            'place_table_safe': torch.tensor(place_table_safes, dtype=torch.float32, device=self.device)
+            'place_table_safe': torch.tensor(place_table_safes, dtype=torch.float32, device=self.device),
+            'inv_logs': torch.tensor(inv_logs, dtype=torch.float32, device=self.device),
+            'inv_planks': torch.tensor(inv_planks, dtype=torch.float32, device=self.device),
+            'inv_sticks': torch.tensor(inv_sticks, dtype=torch.float32, device=self.device),
+            'inv_table': torch.tensor(inv_table, dtype=torch.float32, device=self.device),
+            'inv_axe': torch.tensor(inv_axe, dtype=torch.float32, device=self.device)
         }
     
     def save(self, path: str):

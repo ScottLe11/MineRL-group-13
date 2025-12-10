@@ -410,6 +410,11 @@ class PPOAgent:
             'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
             'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
             'place_table_safe': torch.tensor(np.array([state.get('place_table_safe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_logs': torch.tensor(np.array([state.get('inv_logs', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_planks': torch.tensor(np.array([state.get('inv_planks', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_sticks': torch.tensor(np.array([state.get('inv_sticks', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_table': torch.tensor(np.array([state.get('inv_table', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'inv_axe': torch.tensor(np.array([state.get('inv_axe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
         }
     
     def _batch_to_tensor(self, obs: dict) -> dict:
@@ -420,6 +425,11 @@ class PPOAgent:
             'yaw': torch.tensor(obs['yaw'], dtype=torch.float32, device=self.device),
             'pitch': torch.tensor(obs['pitch'], dtype=torch.float32, device=self.device),
             'place_table_safe': torch.tensor(obs.get('place_table_safe', np.zeros_like(obs['pitch'])), dtype=torch.float32, device=self.device),
+            'inv_logs': torch.tensor(obs.get('inv_logs', np.zeros_like(obs['pitch'])), dtype=torch.float32, device=self.device),
+            'inv_planks': torch.tensor(obs.get('inv_planks', np.zeros_like(obs['pitch'])), dtype=torch.float32, device=self.device),
+            'inv_sticks': torch.tensor(obs.get('inv_sticks', np.zeros_like(obs['pitch'])), dtype=torch.float32, device=self.device),
+            'inv_table': torch.tensor(obs.get('inv_table', np.zeros_like(obs['pitch'])), dtype=torch.float32, device=self.device),
+            'inv_axe': torch.tensor(obs.get('inv_axe', np.zeros_like(obs['pitch'])), dtype=torch.float32, device=self.device),
         }
     
     def save(self, path: str):

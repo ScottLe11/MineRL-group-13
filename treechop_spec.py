@@ -144,7 +144,7 @@ class ConfigurableTreechop(Treechop):
         """
         Args:
             spawn_type: "random" (default) or "near_tree" (not yet implemented)
-            with_logs: Number of oak logs to start with (0-10)
+            with_logs: Number of birch logs to start with (0-64)
             with_axe: Whether to start with a wooden axe equipped
             max_episode_steps: Override max steps (default: TREECHOP_LENGTH)
         """
@@ -197,7 +197,7 @@ class ConfigurableTreechop(Treechop):
         inventory = []
 
         if self.with_logs > 0:
-            inventory.append(dict(type="oak_log", quantity=self.with_logs))
+            inventory.append(dict(type="birch_log", quantity=self.with_logs))
 
         if self.with_axe:
             inventory.append(dict(type="wooden_axe", quantity=1))

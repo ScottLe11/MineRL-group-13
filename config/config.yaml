@@ -112,7 +112,10 @@ action_space:
   # Custom action list (only used if preset is "custom")
   # Example: [0, 1, 2, 6, 7, 8, 23] would include only noop, forward, back,
   #          attack, turn_left_30, turn_left_45, and craft_entire_axe
-  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 15, 17, 19, 20, 21,23]
+  # Current: noop, forward, back, right, left, jump, attack, turn_left_30, turn_left_45,
+  #          turn_right_30, turn_right_45, look_up_12, look_down_12,
+  #          craft_planks, make_table, craft_sticks, craft_entire_axe, attack_5
+  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 15, 17, 19, 20, 21, 23, 24]
 
 # =============================================================================
 # DQN AGENT
@@ -160,7 +163,7 @@ training:
   # Training duration (in EPISODES, not steps)
   # - Recon phase: 200 episodes (quick hyperparameter search)
   # - Full training: 1000-3000 episodes
-  num_episodes: 2100                  # Total episodes to train
+  num_episodes: 4000                  # Total episodes to train
   train_freq: 5                      # Train every N agent steps
   
   # Logging & Saving (in episodes)

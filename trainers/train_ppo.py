@@ -63,6 +63,7 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
     env_config = config['environment']
     episode_seconds = env_config.get('episode_seconds', 20)
     max_steps_per_episode = episode_seconds * 5
+    starting_wood = env_config.get('curriculum', {}).get('with_logs', 0)
 
     algorithm = 'ppo'
 
@@ -193,7 +194,7 @@ def train_ppo(config: dict, env, agent, logger, render: bool = False):
 
         # Console logging (uses common function)
         log_episode_stats(episode, num_episodes, global_step, episode_wood,
-                         recent_wood, agent, env, obs, log_freq)
+                         recent_wood, agent, env, obs, log_freq, starting_wood)
         
         # Save checkpoint (uses common function)
         if episode % save_freq == 0:

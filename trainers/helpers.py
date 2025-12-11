@@ -120,13 +120,13 @@ def print_config_summary(config: dict, agent, env_config: dict):
 
 def log_episode_stats(episode: int, num_episodes: int, global_step: int,
                      episode_wood: int, recent_wood: list, agent,
-                     env, obs: dict, log_freq: int):
+                     env, obs: dict, log_freq: int, starting_wood: int = 0):
     """Print episode statistics and Q-values/action stats."""
     if episode % log_freq != 0:
         return
 
     avg_wood = np.mean(recent_wood) if recent_wood else 0
-    success_rate = sum(1 for w in recent_wood if w > 0) / len(recent_wood) * 100 if recent_wood else 0
+    success_rate = sum(1 for w in recent_wood if w > starting_wood) / len(recent_wood) * 100 if recent_wood else 0
 
     # Build base stats string
     stats_str = (f"Episode {episode}/{num_episodes} | "

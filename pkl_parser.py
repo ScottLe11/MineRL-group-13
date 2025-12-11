@@ -181,6 +181,7 @@ def extract_bc_data(raw_transitions, config: dict):
     """
     Extracts all image and scalar observations, actions, rewards, and dones.
     Uses robust key checking to skip corrupted transitions gracefully.
+    Includes inventory scalars (inv_logs, inv_planks, inv_sticks, inv_table, inv_axe).
     """
     obs_pov_list = []
     obs_time_list = []
@@ -188,12 +189,22 @@ def extract_bc_data(raw_transitions, config: dict):
     obs_pitch_list = []
     obs_place_table_safe_list = []
 
+    # Inventory scalars (newly added for temporal tracking)
+    obs_inv_logs_list = []
+    obs_inv_planks_list = []
+    obs_inv_sticks_list = []
+    obs_inv_table_list = []
+    obs_inv_axe_list = []
+
     action_list = []
     reward_list = []
     done_list = []
 
-    # These are the five keys required by the DQN network
+    # Required observation keys (base 5 scalars)
     REQUIRED_OBS_KEYS = ['pov', 'time_left', 'yaw', 'pitch', 'place_table_safe']
+
+    # Optional inventory keys (will use 0 if not present for backward compatibility)
+    INVENTORY_KEYS = ['inv_logs', 'inv_planks', 'inv_sticks', 'inv_table', 'inv_axe']
     
     for i, transition in enumerate(raw_transitions):
         try:
@@ -215,6 +226,13 @@ def extract_bc_data(raw_transitions, config: dict):
             obs_yaw_list.append(float(state_dict['yaw'][0]))
             obs_pitch_list.append(float(state_dict['pitch'][0]))
             obs_place_table_safe_list.append(float(state_dict['place_table_safe'][0]))
+
+            # 3b. Extract Inventory Scalars (optional, use 0 if not present)
+            obs_inv_logs_list.append(float(state_dict.get('inv_logs', [0.0])[0]))
+            obs_inv_planks_list.append(float(state_dict.get('inv_planks', [0.0])[0]))
+            obs_inv_sticks_list.append(float(state_dict.get('inv_sticks', [0.0])[0]))
+            obs_inv_table_list.append(float(state_dict.get('inv_table', [0.0])[0]))
+            obs_inv_axe_list.append(float(state_dict.get('inv_axe', [0.0])[0]))
 
             # 4. Extract Action/Reward/Done
             raw_action = transition['action']
@@ -266,18 +284,23 @@ def extract_bc_data(raw_transitions, config: dict):
 
     # Convert lists to NumPy arrays
     observations = np.stack(obs_pov_list)
-    
+
     actions = np.array(action_list, dtype=np.int64)
     rewards = np.array(reward_list, dtype=np.float32)
     dones = np.array(done_list, dtype=np.bool_)
-    
-    # Re-package the output to match the original structure, plus scalars
+
+    # Re-package the output to match the original structure, plus ALL scalars (including inventory)
     return {
         'obs_pov': observations,
         'obs_time': np.array(obs_time_list, dtype=np.float32),
         'obs_yaw': np.array(obs_yaw_list, dtype=np.float32),
         'obs_pitch': np.array(obs_pitch_list, dtype=np.float32),
         'obs_place_table_safe': np.array(obs_place_table_safe_list, dtype=np.float32),
+        'obs_inv_logs': np.array(obs_inv_logs_list, dtype=np.float32),
+        'obs_inv_planks': np.array(obs_inv_planks_list, dtype=np.float32),
+        'obs_inv_sticks': np.array(obs_inv_sticks_list, dtype=np.float32),
+        'obs_inv_table': np.array(obs_inv_table_list, dtype=np.float32),
+        'obs_inv_axe': np.array(obs_inv_axe_list, dtype=np.float32),
         'actions': actions,
         'rewards': rewards,
         'dones': dones

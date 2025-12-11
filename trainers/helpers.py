@@ -120,13 +120,13 @@ def print_config_summary(config: dict, agent, env_config: dict):
 
 def log_episode_stats(episode: int, num_episodes: int, global_step: int,
                      episode_wood: int, recent_wood: list, agent,
-                     env, obs: dict, log_freq: int):
+                     env, obs: dict, log_freq: int, starting_wood: int = 0):
     """Print episode statistics and Q-values/action stats."""
     if episode % log_freq != 0:
         return
 
     avg_wood = np.mean(recent_wood) if recent_wood else 0
-    success_rate = sum(1 for w in recent_wood if w > 0) / len(recent_wood) * 100 if recent_wood else 0
+    success_rate = sum(1 for w in recent_wood if w > starting_wood) / len(recent_wood) * 100 if recent_wood else 0
 
     # Build base stats string
     stats_str = (f"Episode {episode}/{num_episodes} | "
@@ -313,6 +313,15 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
     data = np.load(filename)
     print(f"Loaded {len(data['actions'])} transitions from {filename}")
 
+    # Analyze reward distribution
+    rewards = data['rewards']
+    print(f"\n📊 Expert Data Reward Statistics:")
+    print(f"   Min: {rewards.min():.4f}, Max: {rewards.max():.4f}")
+    print(f"   Mean: {rewards.mean():.4f}, Std: {rewards.std():.4f}")
+    print(f"   Positive: {(rewards > 0).sum()} ({(rewards > 0).sum()/len(rewards)*100:.1f}%)")
+    print(f"   Negative: {(rewards < 0).sum()} ({(rewards < 0).sum()/len(rewards)*100:.1f}%)")
+    print(f"   Zero: {(rewards == 0).sum()} ({(rewards == 0).sum()/len(rewards)*100:.1f}%)\n")
+
     # Convert NumPy arrays to PyTorch tensors
     tensors = {
         'pov': torch.tensor(data['obs_pov'], dtype=torch.uint8).float().div(255.0), # Normalize POV here
@@ -325,8 +334,28 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
         'dones': torch.tensor(data['dones'], dtype=torch.bool)
     }
 
+    # Load inventory scalars if available (newer format)
+    if 'obs_inv_logs' in data:
+        tensors['inv_logs'] = torch.tensor(data['obs_inv_logs'], dtype=torch.float32)
+        tensors['inv_planks'] = torch.tensor(data['obs_inv_planks'], dtype=torch.float32)
+        tensors['inv_sticks'] = torch.tensor(data['obs_inv_sticks'], dtype=torch.float32)
+        tensors['inv_table'] = torch.tensor(data['obs_inv_table'], dtype=torch.float32)
+        tensors['inv_axe'] = torch.tensor(data['obs_inv_axe'], dtype=torch.float32)
+        print("✅ Loaded inventory scalars from expert data")
+    else:
+        # Create zero tensors for backward compatibility
+        num_samples = len(tensors['actions'])
+        tensors['inv_logs'] = torch.zeros(num_samples, dtype=torch.float32)
+        tensors['inv_planks'] = torch.zeros(num_samples, dtype=torch.float32)
+        tensors['inv_sticks'] = torch.zeros(num_samples, dtype=torch.float32)
+        tensors['inv_table'] = torch.zeros(num_samples, dtype=torch.float32)
+        tensors['inv_axe'] = torch.zeros(num_samples, dtype=torch.float32)
+        print("⚠️  Inventory scalars not found in data, using zeros (legacy format)")
+
     # Ensure scalar tensors have correct shape (N, 1)
-    for k in ['time_left', 'yaw', 'pitch', 'place_table_safe']:
+    scalar_keys = ['time_left', 'yaw', 'pitch', 'place_table_safe',
+                   'inv_logs', 'inv_planks', 'inv_sticks', 'inv_table', 'inv_axe']
+    for k in scalar_keys:
         if tensors[k].dim() == 1:
             tensors[k] = tensors[k].unsqueeze(1)
 
@@ -335,7 +364,10 @@ def load_bc_data(filename: str) -> Dict[str, torch.Tensor]:
 
 def train_bc(config: dict, env, agent, logger):
     """
-    Behavioral Cloning (BC) training loop (Supervised Learning).
+    Behavioral Cloning (BC) training loop (Supervised Learning) for DQN.
+
+    IMPORTANT: Cross-entropy loss on Q-values only trains relative ordering,
+    not absolute values. We add regularization to keep Q-values centered.
 
     Args:
         config: Configuration dict
@@ -346,160 +378,233 @@ def train_bc(config: dict, env, agent, logger):
     bc_config = config.get('bc', {})
     training_config = config['training']
     device = agent.device
-    
+
     # 1. Load Data
     data_path = bc_config.get('data_path', 'bc_expert_data.npz')
-    print(f"\n📦 Starting Behavioral Cloning (BC) using data from: {data_path}")
+    print(f"\n📦 Starting Behavioral Cloning (BC) for DQN using data from: {data_path}")
     expert_tensors = load_bc_data(data_path)
 
-    # 2. Setup DataLoader
+    # 2. Setup DataLoader with ALL scalars including inventory
     dataset = TensorDataset(
         expert_tensors['pov'].to(device),
         expert_tensors['time_left'].to(device),
         expert_tensors['yaw'].to(device),
         expert_tensors['pitch'].to(device),
         expert_tensors['place_table_safe'].to(device),
+        expert_tensors['inv_logs'].to(device),
+        expert_tensors['inv_planks'].to(device),
+        expert_tensors['inv_sticks'].to(device),
+        expert_tensors['inv_table'].to(device),
+        expert_tensors['inv_axe'].to(device),
         expert_tensors['actions'].to(device)
     )
     dataloader = DataLoader(
-        dataset, 
-        batch_size=bc_config.get('batch_size', 32), 
+        dataset,
+        batch_size=bc_config.get('batch_size', 32),
         shuffle=True
     )
     num_epochs = training_config.get('num_episodes', 100)
+
+    # BC hyperparameters
+    q_regularization_weight = bc_config.get('q_regularization', 0.01)  # Prevent extreme Q-values
+    print(f"\n⚙️  BC Hyperparameters:")
+    print(f"   Epochs: {num_epochs}")
+    print(f"   Batch size: {bc_config.get('batch_size', 32)}")
+    print(f"   Learning rate: {bc_config.get('learning_rate', 1e-4)}")
+    print(f"   Q-value regularization: {q_regularization_weight}")
+    print(f"   Gradient clip: {bc_config.get('gradient_clip', 10.0)}\n")
     
-    # 3. Use DQN Network as Policy and Setup Optimizer/Loss (no target network needed)
-    # The DQNAgent object (agent) already contains the Q-Network, which we will treat as the policy network.
-    
+    # 3. Use DQN Network as Policy and Setup Optimizer/Loss
     optimizer = optim.Adam(agent.q_network.parameters(), lr=bc_config.get('learning_rate', 1e-4))
-    
+
     global_step = 0
-    
-    print(f"Training for {num_epochs} epochs with {len(dataloader)} batches per epoch.")
+    q_value_stats = {'min': [], 'max': [], 'mean': [], 'std': []}
+
+    print(f"Training for {num_epochs} epochs with {len(dataloader)} batches per epoch.\n")
 
     # 4. Main BC Training Loop
     for epoch in range(1, num_epochs + 1):
         total_epoch_loss = 0
+        total_ce_loss = 0
+        total_reg_loss = 0
         num_batches = 0
-        
-        for pov_batch, time_left_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
+
+        for batch_data in dataloader:
+            # Unpack batch with inventory scalars
+            (pov_batch, time_left_batch, yaw_batch, pitch_batch, place_table_safe_batch,
+             inv_logs_batch, inv_planks_batch, inv_sticks_batch, inv_table_batch, inv_axe_batch,
+             action_batch) = batch_data
+
             # Construct observation dictionary for the DQN network
             obs_batch = {
                 'pov': pov_batch,
                 'time_left': time_left_batch,
                 'yaw': yaw_batch,
                 'pitch': pitch_batch,
-                'place_table_safe': place_table_safe_batch
+                'place_table_safe': place_table_safe_batch,
+                'inv_logs': inv_logs_batch,
+                'inv_planks': inv_planks_batch,
+                'inv_sticks': inv_sticks_batch,
+                'inv_table': inv_table_batch,
+                'inv_axe': inv_axe_batch
             }
-            
-            # Forward pass: get Q-values (logits)
-            # We use the Q-network's output as the action preference scores (logits)
-            q_values = agent.q_network(obs_batch)
-            
-            # Loss: Cross-Entropy between Q-value logits and expert actions
-            # F.cross_entropy expects logits (not softmaxed probabilities)
-            loss = F.cross_entropy(q_values, action_batch)
-            
-            # Gradient clipping (max_grad_norm)
-            max_grad_norm = bc_config.get('gradient_clip', 10.0)
 
+            # Forward pass: get Q-values
+            q_values = agent.q_network(obs_batch)
+
+            # LOSS 1: Cross-Entropy (trains relative ordering)
+            ce_loss = F.cross_entropy(q_values, action_batch)
+
+            # LOSS 2: Q-value Regularization (keeps Q-values centered near 0)
+            # Penalize large absolute Q-values to prevent runaway negative values
+            # This encourages Q-values to stay in a reasonable range
+            q_mean = q_values.mean()
+            q_std = q_values.std()
+            reg_loss = q_regularization_weight * (q_mean.pow(2) + (q_std - 1.0).pow(2))
+
+            # Combined loss
+            loss = ce_loss + reg_loss
+
+            # Optimize
+            max_grad_norm = bc_config.get('gradient_clip', 10.0)
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(agent.q_network.parameters(), max_norm=max_grad_norm)
             optimizer.step()
-            
+
+            # Accumulate losses
             total_epoch_loss += loss.item()
+            total_ce_loss += ce_loss.item()
+            total_reg_loss += reg_loss.item()
             num_batches += 1
             global_step += 1
 
+            # Track Q-value statistics
+            q_value_stats['min'].append(q_values.min().item())
+            q_value_stats['max'].append(q_values.max().item())
+            q_value_stats['mean'].append(q_values.mean().item())
+            q_value_stats['std'].append(q_values.std().item())
+
             # Log metrics every N steps
             if global_step % 50 == 0:
-                avg_loss = total_epoch_loss / num_batches
                 logger.log_training_step(
-                    step=global_step, 
-                    loss=avg_loss, 
+                    step=global_step,
+                    loss=total_epoch_loss / num_batches,
                     q_mean=q_values.mean().item()
                 )
+                logger.log_scalar("bc/ce_loss", total_ce_loss / num_batches, global_step)
+                logger.log_scalar("bc/reg_loss", total_reg_loss / num_batches, global_step)
 
         # Log end of epoch metrics
         avg_loss = total_epoch_loss / num_batches
-        logger.log_scalar("bc/loss_epoch", avg_loss, epoch)
-        
-        # Console logging
-        print(f"Epoch {epoch}/{num_epochs} | Loss: {avg_loss:.4f} | Global Steps: {global_step}")
+        avg_ce_loss = total_ce_loss / num_batches
+        avg_reg_loss = total_reg_loss / num_batches
+
+        logger.log_scalar("bc/total_loss_epoch", avg_loss, epoch)
+        logger.log_scalar("bc/ce_loss_epoch", avg_ce_loss, epoch)
+        logger.log_scalar("bc/reg_loss_epoch", avg_reg_loss, epoch)
+
+        # Console logging with Q-value statistics
+        recent_q_mean = np.mean(q_value_stats['mean'][-100:])
+        recent_q_min = np.min(q_value_stats['min'][-100:])
+        recent_q_max = np.max(q_value_stats['max'][-100:])
+
+        print(f"Epoch {epoch}/{num_epochs} | "
+              f"Loss: {avg_loss:.4f} (CE: {avg_ce_loss:.4f}, Reg: {avg_reg_loss:.4f}) | "
+              f"Q-values: [{recent_q_min:.2f}, {recent_q_max:.2f}] (mean: {recent_q_mean:.2f})")
 
         # Save checkpoint
         if epoch % training_config.get('save_freq', 50) == 0:
             save_checkpoint(agent, config, epoch, save_buffer=False)
 
-    # NOTE: We'll save the final checkpoint AFTER pre-filling the buffer
-    # This way the saved checkpoint includes expert demonstrations
-
+    # Print final Q-value statistics
     print(f"\n{'='*60}")
     print(f"BEHAVIORAL CLONING COMPLETE")
     print(f"{'='*60}")
     print(f"Total epochs: {num_epochs}")
     print(f"Total steps (batches): {global_step}")
+    print(f"\n📊 Final Q-value Statistics:")
+    print(f"   Min: {np.min(q_value_stats['min'][-100:]):.2f}")
+    print(f"   Max: {np.max(q_value_stats['max'][-100:]):.2f}")
+    print(f"   Mean: {np.mean(q_value_stats['mean'][-100:]):.2f}")
+    print(f"   Std: {np.mean(q_value_stats['std'][-100:]):.2f}")
     print(f"{'='*60}")
 
-    # Pre-fill replay buffer with expert demonstrations
-    print(f"\n{'='*60}")
-    print(f"PRE-FILLING REPLAY BUFFER WITH EXPERT DEMONSTRATIONS")
-    print(f"{'='*60}\n")
+    # Optional: Pre-fill replay buffer with expert demonstrations
+    # WARNING: If expert rewards are mostly negative, this can cause Q-value collapse
+    prefill_buffer = bc_config.get('prefill_replay_buffer', False)
 
-    # Reload expert data (we already have it in expert_tensors, but let's be explicit)
-    num_transitions = len(expert_tensors['actions'])
+    if prefill_buffer:
+        print(f"\n{'='*60}")
+        print(f"PRE-FILLING REPLAY BUFFER WITH EXPERT DEMONSTRATIONS")
+        print(f"{'='*60}")
+        print(f"⚠️  WARNING: If expert rewards are mostly negative, this can cause")
+        print(f"   Q-values to become very negative through bootstrapping.")
+        print(f"   Consider setting 'prefill_replay_buffer: false' in config.\n")
 
-    # Construct (state, action, reward, next_state, done) tuples
-    # States are at indices [0, 1, 2, ..., N-1]
-    # Next states are at indices [1, 2, 3, ..., N]
-    # We can't create a transition for the last state (no next_state), so we use N-1 transitions
+        num_transitions = len(expert_tensors['actions'])
+        num_valid_transitions = num_transitions - 1
+        transitions_added = 0
 
-    num_valid_transitions = num_transitions - 1
-    transitions_added = 0
+        print(f"Adding {num_valid_transitions} expert transitions to replay buffer...")
 
-    print(f"Adding {num_valid_transitions} expert transitions to replay buffer...")
+        for i in range(num_valid_transitions):
+            # Current state
+            state = {
+                'pov': expert_tensors['pov'][i].unsqueeze(0),
+                'time_left': expert_tensors['time_left'][i].unsqueeze(0),
+                'yaw': expert_tensors['yaw'][i].unsqueeze(0),
+                'pitch': expert_tensors['pitch'][i].unsqueeze(0),
+                'place_table_safe': expert_tensors['place_table_safe'][i].unsqueeze(0),
+                'inv_logs': expert_tensors['inv_logs'][i].unsqueeze(0),
+                'inv_planks': expert_tensors['inv_planks'][i].unsqueeze(0),
+                'inv_sticks': expert_tensors['inv_sticks'][i].unsqueeze(0),
+                'inv_table': expert_tensors['inv_table'][i].unsqueeze(0),
+                'inv_axe': expert_tensors['inv_axe'][i].unsqueeze(0)
+            }
 
-    for i in range(num_valid_transitions):
-        # Current state
-        state = {
-            'pov': expert_tensors['pov'][i].unsqueeze(0),      # Add batch dim
-            'time_left': expert_tensors['time_left'][i].unsqueeze(0),
-            'yaw': expert_tensors['yaw'][i].unsqueeze(0),
-            'pitch': expert_tensors['pitch'][i].unsqueeze(0),
-            'place_table_safe': expert_tensors['place_table_safe'][i].unsqueeze(0)
-        }
+            # Next state
+            next_state = {
+                'pov': expert_tensors['pov'][i+1].unsqueeze(0),
+                'time_left': expert_tensors['time_left'][i+1].unsqueeze(0),
+                'yaw': expert_tensors['yaw'][i+1].unsqueeze(0),
+                'pitch': expert_tensors['pitch'][i+1].unsqueeze(0),
+                'place_table_safe': expert_tensors['place_table_safe'][i+1].unsqueeze(0),
+                'inv_logs': expert_tensors['inv_logs'][i+1].unsqueeze(0),
+                'inv_planks': expert_tensors['inv_planks'][i+1].unsqueeze(0),
+                'inv_sticks': expert_tensors['inv_sticks'][i+1].unsqueeze(0),
+                'inv_table': expert_tensors['inv_table'][i+1].unsqueeze(0),
+                'inv_axe': expert_tensors['inv_axe'][i+1].unsqueeze(0)
+            }
 
-        # Next state
-        next_state = {
-            'pov': expert_tensors['pov'][i+1].unsqueeze(0),
-            'time_left': expert_tensors['time_left'][i+1].unsqueeze(0),
-            'yaw': expert_tensors['yaw'][i+1].unsqueeze(0),
-            'pitch': expert_tensors['pitch'][i+1].unsqueeze(0),
-            'place_table_safe': expert_tensors['place_table_safe'][i+1].unsqueeze(0)
-        }
+            action = int(expert_tensors['actions'][i].item())
+            reward = float(expert_tensors['rewards'][i].item())
+            done = bool(expert_tensors['dones'][i].item())
 
-        action = int(expert_tensors['actions'][i].item())
-        reward = float(expert_tensors['rewards'][i].item())
-        done = bool(expert_tensors['dones'][i].item())
+            # Add to replay buffer
+            agent.replay_buffer.add(state, action, reward, next_state, done)
+            transitions_added += 1
 
-        # Add to replay buffer
-        agent.replay_buffer.add(state, action, reward, next_state, done)
-        transitions_added += 1
+            # Log progress every 10%
+            if (i + 1) % max(1, num_valid_transitions // 10) == 0:
+                progress = (i + 1) / num_valid_transitions * 100
+                print(f"  Progress: {progress:.1f}% ({i+1}/{num_valid_transitions} transitions)")
 
-        # Log progress every 10%
-        if (i + 1) % max(1, num_valid_transitions // 10) == 0:
-            progress = (i + 1) / num_valid_transitions * 100
-            print(f"  Progress: {progress:.1f}% ({i+1}/{num_valid_transitions} transitions)")
+        print(f"\n✅ Successfully added {transitions_added} expert transitions to replay buffer")
+        print(f"   Replay buffer size: {len(agent.replay_buffer)} / {agent.replay_buffer.capacity}")
+        print(f"{'='*60}\n")
 
-    print(f"\n✅ Successfully added {transitions_added} expert transitions to replay buffer")
-    print(f"   Replay buffer size: {len(agent.replay_buffer)} / {agent.replay_buffer.capacity}")
-    print(f"   Ready for DQN fine-tuning!\n")
-    print(f"{'='*60}\n")
+        # Final save with replay buffer
+        print("💾 Saving final checkpoint with expert demonstrations in replay buffer...")
+        save_checkpoint(agent, config, num_epochs, final=True, save_buffer=True)
+    else:
+        print(f"\n⚠️  Replay buffer pre-filling is DISABLED (prefill_replay_buffer: false)")
+        print(f"   The BC-trained policy will start DQN training with an empty buffer.")
+        print(f"   Q-values will calibrate through self-play experiences.\n")
 
-    # Final save with replay buffer
-    print("💾 Saving final checkpoint with expert demonstrations in replay buffer...")
-    save_checkpoint(agent, config, num_epochs, final=True, save_buffer=True)
+        # Save checkpoint WITHOUT replay buffer
+        print("💾 Saving final BC checkpoint (no replay buffer)...")
+        save_checkpoint(agent, config, num_epochs, final=True, save_buffer=False)
 
     # No environment usage during BC, so just return
     return env
@@ -510,7 +615,8 @@ def train_bc_ppo(config: dict, env, agent, logger):
     Behavioral Cloning (BC) training loop for PPO (Supervised Learning).
 
     Trains the PPO policy network to imitate expert demonstrations.
-    Similar to train_bc but for PPO's ActorCriticNetwork instead of Q-Network.
+    PPO BC is simpler than DQN BC because action logits are naturally
+    suited for cross-entropy loss (no Q-value calibration issues).
 
     Args:
         config: Configuration dict
@@ -527,13 +633,18 @@ def train_bc_ppo(config: dict, env, agent, logger):
     print(f"\n📦 Starting Behavioral Cloning (BC) for PPO using data from: {data_path}")
     expert_tensors = load_bc_data(data_path)
 
-    # 2. Setup DataLoader
+    # 2. Setup DataLoader with ALL scalars including inventory
     dataset = TensorDataset(
         expert_tensors['pov'].to(device),
         expert_tensors['time_left'].to(device),
         expert_tensors['yaw'].to(device),
         expert_tensors['pitch'].to(device),
         expert_tensors['place_table_safe'].to(device),
+        expert_tensors['inv_logs'].to(device),
+        expert_tensors['inv_planks'].to(device),
+        expert_tensors['inv_sticks'].to(device),
+        expert_tensors['inv_table'].to(device),
+        expert_tensors['inv_axe'].to(device),
         expert_tensors['actions'].to(device)
     )
     dataloader = DataLoader(
@@ -543,46 +654,67 @@ def train_bc_ppo(config: dict, env, agent, logger):
     )
     num_epochs = training_config.get('num_episodes', 100)
 
-    # 3. Use PPO Policy Network and Setup Optimizer/Loss
-    # The PPOAgent has a policy (ActorCriticNetwork) with actor and critic heads
-    # We'll train the actor head to match expert actions
+    print(f"\n⚙️  BC Hyperparameters:")
+    print(f"   Epochs: {num_epochs}")
+    print(f"   Batch size: {bc_config.get('batch_size', 32)}")
+    print(f"   Learning rate: {bc_config.get('learning_rate', 1e-4)}")
+    print(f"   Gradient clip: {bc_config.get('gradient_clip', 10.0)}\n")
 
+    # 3. Use PPO Policy Network and Setup Optimizer/Loss
     optimizer = optim.Adam(agent.policy.parameters(), lr=bc_config.get('learning_rate', 1e-4))
 
     global_step = 0
+    action_prob_stats = {'entropy': [], 'max_prob': []}
 
-    print(f"Training for {num_epochs} epochs with {len(dataloader)} batches per epoch.")
+    print(f"Training for {num_epochs} epochs with {len(dataloader)} batches per epoch.\n")
 
     # 4. Main BC Training Loop
     for epoch in range(1, num_epochs + 1):
         total_epoch_loss = 0
         num_batches = 0
 
-        for pov_batch, time_left_batch, yaw_batch, pitch_batch, place_table_safe_batch, action_batch in dataloader:
+        for batch_data in dataloader:
+            # Unpack batch with inventory scalars
+            (pov_batch, time_left_batch, yaw_batch, pitch_batch, place_table_safe_batch,
+             inv_logs_batch, inv_planks_batch, inv_sticks_batch, inv_table_batch, inv_axe_batch,
+             action_batch) = batch_data
+
             # Construct observation dictionary for the PPO policy network
             obs_batch = {
                 'pov': pov_batch,
                 'time_left': time_left_batch,
                 'yaw': yaw_batch,
                 'pitch': pitch_batch,
-                'place_table_safe': place_table_safe_batch
+                'place_table_safe': place_table_safe_batch,
+                'inv_logs': inv_logs_batch,
+                'inv_planks': inv_planks_batch,
+                'inv_sticks': inv_sticks_batch,
+                'inv_table': inv_table_batch,
+                'inv_axe': inv_axe_batch
             }
 
             # Forward pass: get action logits from the policy network
             # ActorCriticNetwork returns (action_logits, value)
-            # We only need action_logits for BC
             action_logits, _ = agent.policy(obs_batch)
 
             # Loss: Cross-Entropy between policy logits and expert actions
+            # This is the correct loss for PPO BC (logits are meant for this!)
             loss = F.cross_entropy(action_logits, action_batch)
 
-            # Gradient clipping (max_grad_norm)
+            # Optimize
             max_grad_norm = bc_config.get('gradient_clip', 10.0)
-
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(agent.policy.parameters(), max_norm=max_grad_norm)
             optimizer.step()
+
+            # Track policy statistics
+            with torch.no_grad():
+                action_probs = torch.softmax(action_logits, dim=1)
+                entropy = -(action_probs * torch.log(action_probs + 1e-8)).sum(dim=1).mean()
+                max_prob = action_probs.max(dim=1)[0].mean()
+                action_prob_stats['entropy'].append(entropy.item())
+                action_prob_stats['max_prob'].append(max_prob.item())
 
             total_epoch_loss += loss.item()
             num_batches += 1
@@ -590,19 +722,25 @@ def train_bc_ppo(config: dict, env, agent, logger):
 
             # Log metrics every N steps
             if global_step % 50 == 0:
-                avg_loss = total_epoch_loss / num_batches
                 logger.log_training_step(
                     step=global_step,
-                    loss=avg_loss,
+                    loss=total_epoch_loss / num_batches,
                     q_mean=action_logits.mean().item()
                 )
+                logger.log_scalar("bc_ppo/entropy", entropy.item(), global_step)
 
         # Log end of epoch metrics
         avg_loss = total_epoch_loss / num_batches
         logger.log_scalar("bc/loss_epoch", avg_loss, epoch)
 
-        # Console logging
-        print(f"Epoch {epoch}/{num_epochs} | Loss: {avg_loss:.4f} | Global Steps: {global_step}")
+        # Console logging with policy statistics
+        recent_entropy = np.mean(action_prob_stats['entropy'][-100:])
+        recent_max_prob = np.mean(action_prob_stats['max_prob'][-100:])
+
+        print(f"Epoch {epoch}/{num_epochs} | "
+              f"Loss: {avg_loss:.4f} | "
+              f"Entropy: {recent_entropy:.3f} | "
+              f"Max Prob: {recent_max_prob:.3f}")
 
         # Save checkpoint
         if epoch % training_config.get('save_freq', 50) == 0:
@@ -616,6 +754,9 @@ def train_bc_ppo(config: dict, env, agent, logger):
     print(f"{'='*60}")
     print(f"Total epochs: {num_epochs}")
     print(f"Total steps (batches): {global_step}")
+    print(f"\n📊 Final Policy Statistics:")
+    print(f"   Entropy: {np.mean(action_prob_stats['entropy'][-100:]):.3f}")
+    print(f"   Max Prob: {np.mean(action_prob_stats['max_prob'][-100:]):.3f}")
     print(f"{'='*60}")
 
     # No environment usage during BC, so just return

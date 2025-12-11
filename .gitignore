@@ -50,7 +50,7 @@ checkpoints/
 saved_models/
 models/
 *.pth
-*.pt
+
 *.ckpt
 logs/
 runs/

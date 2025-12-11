@@ -192,7 +192,7 @@ ppo:
   gamma: 0.99                        # Discount factor
   gae_lambda: 0.95                   # GAE lambda
   clip_epsilon: 0.2                  # PPO clipping parameter
-  entropy_coef: 0.05                 # Entropy bonus
+  entropy_coef: 0.02                 # Entropy bonus
   value_coef: 0.5                    # Value loss coefficient
   max_grad_norm: 0.5                 # Gradient clipping
   n_steps: 1024                      # Steps per rollout

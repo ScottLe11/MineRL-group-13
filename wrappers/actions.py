@@ -410,10 +410,42 @@ class ExtendedActionWrapper(ActionWrapper):
         return self._finalize_macro(tracer, 'craft_entire_axe', aborted=not ok)
     
     def _finalize_macro(self, tracer, macro_name: str, aborted: bool):
-        """Finalize macro execution and return results."""
+        """
+        Finalize macro execution and return results.
+
+        Ensures time consistency:
+        - Failed crafts: Execute 16 no-op frames (standard abort cost)
+        - Successful crafts: Ceiling to nearest multiple of 4 frames
+          (e.g., 15→16, 12→12, 13→16, 20→20)
+
+        This prevents the agent from learning that failed actions are cheaper.
+        All actions take time in multiples of 4 frames for consistent agent steps.
+        """
+        no_op_action = self.env.action_space.no_op()
+
+        if aborted:
+            # Failed craft: execute exactly 16 no-op frames
+            for _ in range(16):
+                obs, reward, done, info = tracer.step(no_op_action)
+                if done:
+                    break
+        else:
+            # Successful craft: ceiling to nearest multiple of 4 frames
+            # Examples: 15→16, 12→12, 13→16, 20→20
+            import math
+            frames_used = tracer.steps
+            target_frames = math.ceil(frames_used / 4) * 4
+            padding_needed = target_frames - frames_used
+
+            for _ in range(padding_needed):
+                obs, reward, done, info = tracer.step(no_op_action)
+                if done:
+                    break
+
+        # Ensure we have at least one step
         if tracer.last is None:
-            tracer.step(self.env.action_space.no_op())
-        
+            tracer.step(no_op_action)
+
         obs, _, done, info = tracer.last
         self._last_obs = obs
 
@@ -423,7 +455,7 @@ class ExtendedActionWrapper(ActionWrapper):
         info['macro_steps'] = tracer.steps
         info['macro_reward'] = tracer.total_reward
         info['macro_aborted'] = aborted
-        
+
         return obs, tracer.total_reward, done, info
     
     def _find_hold_attack_wrapper(self):

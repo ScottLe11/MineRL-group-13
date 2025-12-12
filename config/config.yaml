@@ -234,6 +234,10 @@ algorithm: "ppo"
 rewards:
   wood_value: 5.0                    # Points per log change (mined or used)
   step_penalty: -0.001               # Penalty per frame (encourages speed)
+  axe_reward: 15.0                   # Axe reward for the first time
+  plank_reward: 20.0                 # Plank reward for the first time
+  stick_reward: 10.0                 # Stick reward for the first time
+  waste_penalty: -4.0                # If making stick after the first time punish it
 
 # =============================================================================
 # HARDWARE
@@ -249,4 +253,3 @@ grad_cam:
   attack_action_index: 6
   # Filename for the output image from the standalone run_grad_cam.py script
   output_filename: "grad_cam_visualization.jpg"
-

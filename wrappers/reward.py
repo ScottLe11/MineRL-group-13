@@ -11,7 +11,7 @@ New reward system:
 
 import gym
 import numpy as np
-from crafting.crafting_utils import LOG_ITEM_KEYS
+from crafting.crafting_utils import get_basic_inventory_counts
 
 
 class RewardWrapper(gym.Wrapper):
@@ -26,7 +26,7 @@ class RewardWrapper(gym.Wrapper):
     reward = (wood_delta × wood_value) + step_penalty
     """
 
-    def __init__(self, env, wood_value: float = 1.0, step_penalty: float = -0.001):
+    def __init__(self, env, wood_value: float = 1.0, step_penalty: float = -0.001, axe_reward: float = 10.0, plank_reward: float = 5.0, stick_reward: float = 5.0, waste_penalty: float = -2.0):
         """
         Args:
             env: The wrapped environment.
@@ -36,43 +36,40 @@ class RewardWrapper(gym.Wrapper):
         super().__init__(env)
         self.wood_value = wood_value
         self.step_penalty = step_penalty
+        self.waste_penalty = waste_penalty
+
+        # Achievement Rewards
+        self.axe_reward = axe_reward
+        self.plank_reward = plank_reward
+        self.stick_reward = stick_reward
+
+        # Achievement Flags (One-time only)
+        self.has_rewarded_axe = False
+        self.has_rewarded_planks = False
+        self.has_rewarded_sticks = False
 
         # Track wood inventory
         self.previous_wood_count = 0
+        self.previous_stick_count = 0
 
         # Track episode statistics
         self.episode_wood_mined = 0
         self.episode_wood_used = 0
         self.episode_frames = 0
 
-    def _get_wood_count(self, obs) -> int:
-        """
-        Extract wood/log count from observation.
-
-        MineRL observations contain inventory info. This handles:
-        - obs['inventory']['log'] (typical MineRL format)
-        - Fallback to 0 if not available
-        """
-        try:
-            if isinstance(obs, dict) and 'inventory' in obs:
-                inv = obs['inventory']
-                if isinstance(inv, dict):
-                    # [MODIFIED LOGIC] Sum all known log types
-                    return sum(int(inv.get(key, 0)) for key in LOG_ITEM_KEYS)
-                
-                # Handle case where inventory might be a flat array or other format
-                # (Fallback logic if needed, but dict check above covers standard MineRL)
-                return 0
-            return 0
-        except (KeyError, TypeError, AttributeError):
-            return 0
-
     def reset(self):
         """Reset environment and statistics."""
         obs = self.env.reset()
 
-        # Initialize wood count from starting inventory
-        self.previous_wood_count = self._get_wood_count(obs)
+        # Use crafting_utils to get aggregated counts 
+        counts = get_basic_inventory_counts(obs)
+        self.previous_wood_count = counts.get('logs', 0)
+        self.previous_stick_count = counts.get('sticks', 0)
+        
+        # Initialize achievements based on starting inventory
+        self.has_rewarded_axe = counts.get('wooden_axe', 0) > 0
+        self.has_rewarded_planks = counts.get('planks', 0) > 0
+        self.has_rewarded_sticks = counts.get('sticks', 0) > 0
 
         # Reset statistics
         self.episode_wood_mined = 0
@@ -86,16 +83,50 @@ class RewardWrapper(gym.Wrapper):
         obs, raw_reward, done, info = self.env.step(action)
 
         # Get current wood count from inventory
-        current_wood_count = self._get_wood_count(obs)
+        counts = get_basic_inventory_counts(obs)
+
+        current_wood_count = counts.get('logs', 0)
 
         # Calculate change in wood inventory
         wood_delta = current_wood_count - self.previous_wood_count
+
+        bonus_reward = 0.0
+        
+        # Check Planks (Any variant)
+        if not self.has_rewarded_planks and counts.get('planks', 0) > 0:
+            bonus_reward += self.plank_reward
+            self.has_rewarded_planks = True
+            
+        # Check Sticks
+        if not self.has_rewarded_sticks and counts.get('sticks', 0) > 0:
+            bonus_reward += self.stick_reward
+            self.has_rewarded_sticks = True
+
+        # Check Axe
+        if not self.has_rewarded_axe and counts.get('wooden_axe', 0) > 0:
+            bonus_reward += self.axe_reward
+            self.has_rewarded_axe = True
+
+        current_stick_penalty = 0.0
+        current_stick_count = counts.get('sticks', 0)
+        stick_delta = current_stick_count - self.previous_stick_count
+
+        # If we gained sticks 
+        if stick_delta > 0:
+            # More than 2
+            if self.previous_stick_count >= 2:
+                # Punish it
+                current_stick_penalty = self.waste_penalty
 
         # Reward based on inventory change
         # Positive delta = mined wood (+reward)
         # Negative delta = used wood (-reward)
         wood_reward = wood_delta * self.wood_value
-        shaped_reward = wood_reward + self.step_penalty
+        shaped_reward = wood_reward + bonus_reward + current_stick_penalty + self.step_penalty
+
+        # Update previous count
+        self.previous_wood_count = current_wood_count
+        self.previous_stick_count = current_stick_count
 
         # Track statistics
         self.episode_frames += 1
@@ -104,13 +135,11 @@ class RewardWrapper(gym.Wrapper):
         elif wood_delta < 0:
             self.episode_wood_used += abs(wood_delta)
 
-        # Update previous count
-        self.previous_wood_count = current_wood_count
-
         # Add info
         info['wood_delta'] = wood_delta
         info['wood_count'] = current_wood_count
         info['wood_reward'] = wood_reward
+        info['bonus_reward'] = bonus_reward
         info['wood_this_frame'] = max(0, wood_delta)  # Only count wood collected (not used)
 
         if done:
@@ -204,4 +233,3 @@ if __name__ == "__main__":
     print("   ✓ Mining gives positive rewards")
     print("   ✓ Crafting/using gives negative rewards")
     print("   ✓ Total episode reward = net wood change + step penalties")
-

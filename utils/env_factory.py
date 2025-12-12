@@ -154,6 +154,10 @@ def create_env(config: dict, wrap: bool = True):
         env,
         wood_value=reward_config.get('wood_value', 1.0),
         step_penalty=reward_config.get('step_penalty', -0.001),
+        axe_reward=reward_config.get('axe_reward', 10.0),
+        plank_reward=reward_config.get('plank_reward', 5.0), 
+        stick_reward=reward_config.get('stick_reward', 5.0),
+        waste_penalty=reward_config.get('waste_penalty', -2.0)
     )
     env = ObservationWrapper(env, max_episode_steps=max_steps_per_episode)
     env = ConfigurableActionWrapper(env, enabled_actions=enabled_actions)

@@ -17,6 +17,8 @@ from wrappers.hold_attack import HoldAttackWrapper
 from wrappers.actions import ConfigurableActionWrapper
 from wrappers.reward import RewardWrapper
 
+import crafting.crafting_guide 
+
 # Constants
 AGENT_STEPS_PER_SECOND = 5  # Each agent step = 4 frames at 20 ticks/sec = 0.2s
 
@@ -151,10 +153,11 @@ def create_env(config: dict, wrap: bool = True):
     env = RewardWrapper(
         env,
         wood_value=reward_config.get('wood_value', 1.0),
-        step_penalty=reward_config.get('step_penalty', -0.001)
+        step_penalty=reward_config.get('step_penalty', -0.001),
     )
     env = ObservationWrapper(env, max_episode_steps=max_steps_per_episode)
     env = ConfigurableActionWrapper(env, enabled_actions=enabled_actions)
+    crafting.crafting_guide._install_reset_hook(env)
     print("✓ All wrappers applied.")
 
     return env

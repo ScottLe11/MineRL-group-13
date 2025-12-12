@@ -7,7 +7,7 @@ Manages:
 - Action state for UI display
 """
 
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING, List
 
 # Avoid importing wrappers at module level to prevent cv2 dependency in tests
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class ActionQueue:
     - Attempts to queue when buffer full are rejected
     """
 
-    def __init__(self, action_definitions: Dict[int, 'DiscreteAction']):
+    def __init__(self, action_definitions: Dict[int, 'DiscreteAction'], queue_size: int = 1):
         """
         Initialize action queue.
 
@@ -38,8 +38,9 @@ class ActionQueue:
         self.current_action: Optional[int] = None
         self.current_remaining_steps: int = 0
 
-        # Queue state (single slot)
-        self.queued_action: Optional[int] = None
+        # Queue state (FIFO list, configurable size)
+        self.queue_size: int = queue_size
+        self.queued_actions: List[int] = []
 
         # Statistics
         self.total_actions_executed = 0
@@ -51,7 +52,7 @@ class ActionQueue:
 
     def can_queue(self) -> bool:
         """Check if human can queue a new action."""
-        return self.queued_action is None
+        return len(self.queued_actions) < self.queue_size
 
     def queue_action(self, action_index: int) -> bool:
         """
@@ -77,7 +78,7 @@ class ActionQueue:
             return True
 
         # Otherwise, queue for later
-        self.queued_action = action_index
+        self.queued_actions.append(action_index)
         return True
 
     def _start_action(self, action_index: int):
@@ -85,7 +86,7 @@ class ActionQueue:
         action = self.actions[action_index]
         self.current_action = action_index
         self.current_remaining_steps = action.duration
-        self.queued_action = None
+        # Note: do not clear queued_actions here; queued list is independent
         self.total_actions_executed += 1
 
     def step(self) -> int:
@@ -108,9 +109,10 @@ class ActionQueue:
         # Check if action finished
         if self.current_remaining_steps == 0:
             # Action complete
-            if self.queued_action is not None:
-                # Start queued action
-                self._start_action(self.queued_action)
+            if len(self.queued_actions) > 0:
+                # Start next queued action (FIFO)
+                next_action = self.queued_actions.pop(0)
+                self._start_action(next_action)
             else:
                 # No queued action, go idle
                 self.current_action = None
@@ -121,7 +123,7 @@ class ActionQueue:
         """Clear current action and queue (emergency stop)."""
         self.current_action = None
         self.current_remaining_steps = 0
-        self.queued_action = None
+        self.queued_actions = []
 
     def get_state(self) -> dict:
         """
@@ -141,8 +143,9 @@ class ActionQueue:
             'current_action': self.current_action,
             'current_name': None,
             'remaining_steps': self.current_remaining_steps,
-            'queued_action': self.queued_action,
-            'queued_name': None,
+            # Provide full queued list and its names (may be empty)
+            'queued_actions': list(self.queued_actions),
+            'queued_names': [],
             'is_busy': self.is_busy(),
             'can_queue': self.can_queue(),
         }
@@ -150,8 +153,11 @@ class ActionQueue:
         if self.current_action is not None:
             state['current_name'] = self.actions[self.current_action].display_name
 
-        if self.queued_action is not None:
-            state['queued_name'] = self.actions[self.queued_action].display_name
+        if len(self.queued_actions) > 0:
+            for idx in self.queued_actions:
+                # Only include names for valid indices
+                if idx in self.actions:
+                    state['queued_names'].append(self.actions[idx].display_name)
 
         return state
 

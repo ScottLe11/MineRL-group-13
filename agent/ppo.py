@@ -235,6 +235,7 @@ class PPOAgent:
             ).to(self.device)
         
         # Optimizer
+        self.learning_rate = learning_rate
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
         
         # Rollout buffer
@@ -254,6 +255,7 @@ class PPOAgent:
         # Counters
         self.step_count = 0
         self.update_count = 0
+        self.episode_count = 0
 
         # Action frequency tracking (for debugging)
         self.action_counts = [0] * num_actions
@@ -463,6 +465,7 @@ class PPOAgent:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
             'update_count': self.update_count,
+            'episode_count': self.episode_count,
             'action_counts': self.action_counts,
             'last_actions': self.last_actions,
         }, path)
@@ -471,14 +474,88 @@ class PPOAgent:
     def load(self, path: str):
         """Load agent state."""
         checkpoint = torch.load(path, map_location=self.device)
-        self.policy.load_state_dict(checkpoint['policy_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.step_count = checkpoint['step_count']
-        self.update_count = checkpoint['update_count']
-        # Load action tracking if available (backwards compatible)
-        self.action_counts = checkpoint.get('action_counts', [0] * self.num_actions)
-        self.last_actions = checkpoint.get('last_actions', [])
-        print(f"PPO agent loaded from {path}")
+
+        if 'network' in checkpoint and 'progress_settings' in checkpoint:
+            print("Loading new format checkpoint...")
+            network_state = checkpoint['network']
+            settings = checkpoint['progress_settings']
+        else:
+            print("Loading old format checkpoint...")
+            network_state = checkpoint
+            settings = checkpoint
+        
+        # Cross-Policy Check: DQN -> PPO
+        if 'policy_state_dict' not in network_state and 'q_network_state_dict' in network_state:
+            print(f"\nCross-Policy Load Detected: DQN Checkpoint -> PPO Agent")
+            dqn_state = network_state['q_network_state_dict']
+            ppo_constructed_state = {}
+            
+            for k, v in dqn_state.items():
+                if any(scope in k for scope in ['cnn.', 'attention.', 'scalar_network.']):
+                    ppo_constructed_state[k] = v
+                        
+            network_state['policy_state_dict'] = ppo_constructed_state
+            settings = {}
+
+        # 1. Load Policy with Shape Checking (Action space change handling)
+        saved_state = network_state.get('policy_state_dict', {})
+        current_state = self.policy.state_dict()
+        new_state = {}
+        
+        mismatch_detected = False
+        for k, v in current_state.items():
+            if k in saved_state:
+                saved_v = saved_state[k]
+                if saved_v.shape != v.shape:
+                    mismatch_detected = True
+                    print(f"⚠️  Shape mismatch for {k}: saved {saved_v.shape}, current {v.shape}")
+                    
+                    slices = tuple(slice(0, min(ds, dc)) for ds, dc in zip(saved_v.shape, v.shape))
+                    
+                    try:
+                        v[slices] = saved_v[slices]
+                    except Exception as e:
+                         print(f"Could not auto-slice {k}: {e}. Keeping random init.")
+                         
+                    new_state[k] = v
+                else:
+                    new_state[k] = saved_v
+            else:
+                new_state[k] = v
+        
+        self.policy.load_state_dict(new_state)
+        
+        if mismatch_detected:
+            print("✅ Handled action space mismatch by preserving matching weights.")
+            print("⚠️  Resetting optimizer due to network shape change...")
+            self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learning_rate)
+
+        # 2. Load Optimizer (Reset if failure, force LR)
+        if 'optimizer_state_dict' in settings and not mismatch_detected:
+            try:
+                self.optimizer.load_state_dict(settings['optimizer_state_dict'])
+                
+                # FORCE update learning rate
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.learning_rate
+                print(f"Optimizer loaded")
+            except Exception as e:
+                print(f"Optimizer load failed (likely shape change), resetting optimizer: {e}")
+                self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learning_rate)
+
+        # 3. Counters
+        self.step_count = settings.get('step_count', 0)
+        self.update_count = settings.get('update_count', 0)
+        self.episode_count = settings.get('episode_count', 0)
+        
+        # Load action tracking if available 
+        saved_counts = settings.get('action_counts', [])
+        if len(saved_counts) == self.num_actions:
+            self.action_counts = saved_counts
+        else:
+            self.action_counts = [0] * self.num_actions # Reset if size changed
+
+        self.last_actions = settings.get('last_actions', [])
 
 
 if __name__ == "__main__":

@@ -196,7 +196,9 @@ def craft_table_in_inventory(env, helper, width=640, height=360, obs=None):
     table_slot = HOTBAR_TABLE
     helper.select_hotbar(table_slot)
 
-    look(env, pitch=7.0, repeats=6)
+    look(env, pitch=10.0, repeats=20)
+
+    look(env, pitch=-10.0, repeats=4)
 
     helper.left_click();  tick(env, 1)
     helper.left_click();  tick(env, 1)

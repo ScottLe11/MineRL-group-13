@@ -40,11 +40,14 @@ from .dueling_head import DuelingHead
 from .scalar_network import ScalarNetwork
 from .dqn_network import DQNNetwork
 from .policy_network import ActorCriticNetwork
+from .film import FiLMGenerator, FiLMLayer
+from .film_cbam_network import FiLMCBAMNetwork
+from .film_cbam_policy_network import FiLMCBAMPolicyNetwork
 
 __all__ = [
     # CNN architectures
     'TinyCNN',
-    'SmallCNN', 
+    'SmallCNN',
     'MediumCNN',
     'WideCNN',
     'DeepCNN',
@@ -57,10 +60,16 @@ __all__ = [
     'CBAM',
     'TreechopSpatialBias',
     'create_attention',
+    # FiLM modules
+    'FiLMGenerator',
+    'FiLMLayer',
     # Network heads
     'DuelingHead',
     'ScalarNetwork',
     'DQNNetwork',
     'ActorCriticNetwork',
+    # FiLM-CBAM networks
+    'FiLMCBAMNetwork',
+    'FiLMCBAMPolicyNetwork',
 ]
 

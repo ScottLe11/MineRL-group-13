@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from typing import Dict, Tuple, Optional
 
-from networks import DQNNetwork
+from networks import DQNNetwork, FiLMCBAMNetwork
 from .replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 
 
@@ -83,6 +83,8 @@ class DQNAgent:
         use_scalar_network: bool = False,
         scalar_hidden_dim: int = 64,
         scalar_output_dim: int = 64,
+        use_fusion_layer: bool = False,
+        fusion_hidden_dim: int = 128,
         device: str = None
     ):
         """
@@ -112,6 +114,8 @@ class DQNAgent:
             use_scalar_network: Whether to process scalars through 2-layer FC network
             scalar_hidden_dim: Hidden dimension for scalar network
             scalar_output_dim: Output dimension for scalar network
+            use_fusion_layer: Whether to add FC layer after concatenation for feature fusion
+            fusion_hidden_dim: Hidden dimension for fusion layer
             device: 'cuda', 'mps', 'cpu', or None for auto-detect
         """
         # Device setup
@@ -128,28 +132,46 @@ class DQNAgent:
         # Store critical hyperparams for resume
         self.learning_rate = learning_rate
         self.num_actions = num_actions
+        self.cnn_architecture = cnn_architecture
 
         # Networks (with configurable architecture)
-        self.q_network = DQNNetwork(
-            num_actions,
-            input_channels,
-            num_scalars,
-            cnn_architecture=cnn_architecture,
-            attention_type=attention_type,
-            use_scalar_network=use_scalar_network,
-            scalar_hidden_dim=scalar_hidden_dim,
-            scalar_output_dim=scalar_output_dim
-        ).to(self.device)
-        self.target_network = DQNNetwork(
-            num_actions,
-            input_channels,
-            num_scalars,
-            cnn_architecture=cnn_architecture,
-            attention_type=attention_type,
-            use_scalar_network=use_scalar_network,
-            scalar_hidden_dim=scalar_hidden_dim,
-            scalar_output_dim=scalar_output_dim
-        ).to(self.device)
+        # Use recommended architecture if specified
+        if cnn_architecture == 'film_cbam':
+            self.q_network = FiLMCBAMNetwork(
+                num_actions,
+                input_channels,
+                num_scalars
+            ).to(self.device)
+            self.target_network = FiLMCBAMNetwork(
+                num_actions,
+                input_channels,
+                num_scalars
+            ).to(self.device)
+        else:
+            self.q_network = DQNNetwork(
+                num_actions,
+                input_channels,
+                num_scalars,
+                cnn_architecture=cnn_architecture,
+                attention_type=attention_type,
+                use_scalar_network=use_scalar_network,
+                scalar_hidden_dim=scalar_hidden_dim,
+                scalar_output_dim=scalar_output_dim,
+                use_fusion_layer=use_fusion_layer,
+                fusion_hidden_dim=fusion_hidden_dim
+            ).to(self.device)
+            self.target_network = DQNNetwork(
+                num_actions,
+                input_channels,
+                num_scalars,
+                cnn_architecture=cnn_architecture,
+                attention_type=attention_type,
+                use_scalar_network=use_scalar_network,
+                scalar_hidden_dim=scalar_hidden_dim,
+                scalar_output_dim=scalar_output_dim,
+                use_fusion_layer=use_fusion_layer,
+                fusion_hidden_dim=fusion_hidden_dim
+            ).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.target_network.eval()  # Target network is not trained
 

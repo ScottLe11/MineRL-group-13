@@ -37,9 +37,11 @@ class ActorCriticNetwork(nn.Module):
         hidden_size: int = 512,
         cnn_architecture: str = 'small',
         attention_type: str = 'none',
-        use_scalar_network: bool = False,
-        scalar_hidden_dim: int = 64,
-        scalar_output_dim: int = 64
+        use_scalar_network: bool = True,
+        scalar_hidden_dim: int = 32,
+        scalar_output_dim: int = 32,
+        use_fusion_layer: bool = True,
+        fusion_hidden_dim: int = 128
     ):
         """
         Args:
@@ -50,8 +52,10 @@ class ActorCriticNetwork(nn.Module):
             cnn_architecture: CNN architecture ('tiny', 'small', 'medium', 'wide', 'deep')
             attention_type: Attention mechanism ('none', 'spatial', 'cbam', 'treechop_bias')
             use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
-            scalar_hidden_dim: Hidden dimension for scalar network (default: 64)
-            scalar_output_dim: Output dimension for scalar network (default: 64)
+            scalar_hidden_dim: Hidden dimension for scalar network (default: 32)
+            scalar_output_dim: Output dimension for scalar network (default: 32)
+            use_fusion_layer: Whether to add FC layer after concatenation for feature fusion (default: False)
+            fusion_hidden_dim: Hidden dimension for fusion layer (default: 128)
         """
         super().__init__()
 
@@ -109,8 +113,20 @@ class ActorCriticNetwork(nn.Module):
             self.scalar_network = None
             scalar_dim = num_scalars
 
-        # Feature dimension after CNN + scalars
-        self.feature_dim = cnn_output_dim + scalar_dim
+        # Feature dimension after CNN + scalars (before fusion)
+        combined_dim = cnn_output_dim + scalar_dim
+
+        # Optional fusion layer for learning interactions between visual and scalar features
+        self.use_fusion_layer = use_fusion_layer
+        if use_fusion_layer:
+            self.fusion_layer = nn.Sequential(
+                nn.Linear(combined_dim, fusion_hidden_dim),
+                nn.ReLU()
+            )
+            self.feature_dim = fusion_hidden_dim
+        else:
+            self.fusion_layer = None
+            self.feature_dim = combined_dim
 
         # Actor head (policy): outputs action logits
         self.actor = nn.Sequential(
@@ -192,7 +208,11 @@ class ActorCriticNetwork(nn.Module):
             scalar_features = scalars  # (batch, num_scalars)
 
         # Concatenate visual and scalar features
-        features = torch.cat([cnn_features, scalar_features], dim=1)  # (batch, feature_dim)
+        features = torch.cat([cnn_features, scalar_features], dim=1)  # (batch, combined_dim)
+
+        # Optional fusion layer for feature interaction
+        if self.fusion_layer is not None:
+            features = self.fusion_layer(features)  # (batch, fusion_hidden_dim)
 
         # Actor and critic outputs
         action_logits = self.actor(features)  # (batch, num_actions)

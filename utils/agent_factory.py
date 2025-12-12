@@ -34,11 +34,23 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
     use_scalar_network = network_config.get('use_scalar_network', False)
     scalar_hidden_dim = network_config.get('scalar_hidden_dim', 64)
     scalar_output_dim = network_config.get('scalar_output_dim', 64)
-    arch_info = get_architecture_info().get(arch_name, {})
-    print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
-    print(f"Attention mechanism: {attention_type}")
-    print(f"Scalar network: {'enabled' if use_scalar_network else 'disabled'}" +
-          (f" (hidden={scalar_hidden_dim}, output={scalar_output_dim})" if use_scalar_network else ""))
+    use_fusion_layer = network_config.get('use_fusion_layer', False)
+    fusion_hidden_dim = network_config.get('fusion_hidden_dim', 128)
+
+    if arch_name == 'film_cbam':
+        print(f"Network architecture: film_cbam (FiLM + CBAM + Conv4 + Dual Fusion)")
+        print(f"  - Visual: Conv1-3 (Medium) → FiLM → CBAM → Conv4 → Flatten (2,048)")
+        print(f"  - Scalar: 9 → 32 → 32")
+        print(f"  - Fusion: 2,080 → 512 → 128")
+        print(f"  - Head: Dueling from 128 features")
+    else:
+        arch_info = get_architecture_info().get(arch_name, {})
+        print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
+        print(f"Attention mechanism: {attention_type}")
+        print(f"Scalar network: {'enabled' if use_scalar_network else 'disabled'}" +
+              (f" (hidden={scalar_hidden_dim}, output={scalar_output_dim})" if use_scalar_network else ""))
+        print(f"Fusion layer: {'enabled' if use_fusion_layer else 'disabled'}" +
+              (f" (dim={fusion_hidden_dim})" if use_fusion_layer else ""))
 
     # Log PER and target update settings
     use_per = per_config.get('enabled', False)
@@ -79,6 +91,9 @@ def create_dqn_agent(config: dict, num_actions: int) -> DQNAgent:
         use_scalar_network=use_scalar_network,
         scalar_hidden_dim=scalar_hidden_dim,
         scalar_output_dim=scalar_output_dim,
+        # Fusion layer settings
+        use_fusion_layer=use_fusion_layer,
+        fusion_hidden_dim=fusion_hidden_dim,
         device=config['device']
     )
 
@@ -105,11 +120,23 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
     use_scalar_network = network_config.get('use_scalar_network', False)
     scalar_hidden_dim = network_config.get('scalar_hidden_dim', 64)
     scalar_output_dim = network_config.get('scalar_output_dim', 64)
-    arch_info = get_architecture_info().get(arch_name, {})
-    print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
-    print(f"Attention mechanism: {attention_type}")
-    print(f"Scalar network: {'enabled' if use_scalar_network else 'disabled'}" +
-          (f" (hidden={scalar_hidden_dim}, output={scalar_output_dim})" if use_scalar_network else ""))
+    use_fusion_layer = network_config.get('use_fusion_layer', False)
+    fusion_hidden_dim = network_config.get('fusion_hidden_dim', 128)
+
+    if arch_name == 'film_cbam':
+        print(f"Network architecture: film_cbam (FiLM + CBAM + Conv4 + Dual Fusion)")
+        print(f"  - Visual: Conv1-3 (Medium) → FiLM → CBAM → Conv4 → Flatten (2,048)")
+        print(f"  - Scalar: 9 → 32 → 32")
+        print(f"  - Fusion: 2,048 + 32 = 2,080 → 512 → 128")
+        print(f"  - Head: Actor-Critic from 128 features")
+    else:
+        arch_info = get_architecture_info().get(arch_name, {})
+        print(f"Network architecture: {arch_name} ({arch_info.get('params', 'unknown'):,} params)")
+        print(f"Attention mechanism: {attention_type}")
+        print(f"Scalar network: {'enabled' if use_scalar_network else 'disabled'}" +
+              (f" (hidden={scalar_hidden_dim}, output={scalar_output_dim})" if use_scalar_network else ""))
+        print(f"Fusion layer: {'enabled' if use_fusion_layer else 'disabled'}" +
+              (f" (dim={fusion_hidden_dim})" if use_fusion_layer else ""))
 
     agent = PPOAgent(
         num_actions=num_actions,
@@ -132,6 +159,9 @@ def create_ppo_agent(config: dict, num_actions: int) -> PPOAgent:
         use_scalar_network=use_scalar_network,
         scalar_hidden_dim=scalar_hidden_dim,
         scalar_output_dim=scalar_output_dim,
+        # Fusion layer settings
+        use_fusion_layer=use_fusion_layer,
+        fusion_hidden_dim=fusion_hidden_dim,
         device=config['device']
     )
 

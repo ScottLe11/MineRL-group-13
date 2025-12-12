@@ -96,7 +96,13 @@ def print_config_summary(config: dict, agent, env_config: dict):
     print(f"Algorithm: {algorithm.upper()}")
     print(f"Episodes: {config['training']['num_episodes']}")
     print(f"Episode length: {episode_seconds} seconds ({max_steps} agent steps)")
-    print(f"Network: {arch_name} ({arch_info.get('params', '?'):,} params)")
+
+    # Handle network params formatting
+    params = arch_info.get('params', '?')
+    if isinstance(params, (int, float)):
+        print(f"Network: {arch_name} ({params:,} params)")
+    else:
+        print(f"Network: {arch_name} ({params} params)")
 
     # Algorithm-specific config
     if algorithm == 'dqn':

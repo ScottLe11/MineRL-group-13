@@ -15,6 +15,7 @@ import torch.optim as optim
 from typing import Dict, List, Tuple, Optional
 
 from networks.policy_network import ActorCriticNetwork
+from networks.film_cbam_policy_network import FiLMCBAMPolicyNetwork
 
 
 class RolloutBuffer:
@@ -109,17 +110,24 @@ class RolloutBuffer:
             batch_indices = indices[start:end]
             
             # Batch observations
+            # Helper to extract scalar values (handle both scalar and array formats)
+            def extract_scalar(obs_dict, key, default=0.0):
+                val = obs_dict.get(key, default)
+                if isinstance(val, np.ndarray):
+                    return float(val[0] if val.size > 0 else default)
+                return float(val if val is not None else default)
+            
             batch_obs = {
                 'pov': np.stack([self.observations[i]['pov'] for i in batch_indices]),
-                'time_left': np.array([self.observations[i]['time_left'] for i in batch_indices]),
-                'yaw': np.array([self.observations[i]['yaw'] for i in batch_indices]),
-                'pitch': np.array([self.observations[i]['pitch'] for i in batch_indices]),
-                'place_table_safe': np.array([self.observations[i]['place_table_safe'] for i in batch_indices]),
-                'inv_logs': np.array([self.observations[i]['inv_logs'] for i in batch_indices]),
-                'inv_planks': np.array([self.observations[i]['inv_planks'] for i in batch_indices]),
-                'inv_sticks': np.array([self.observations[i]['inv_sticks'] for i in batch_indices]),
-                'inv_table': np.array([self.observations[i]['inv_table'] for i in batch_indices]),
-                'inv_axe': np.array([self.observations[i]['inv_axe'] for i in batch_indices]),
+                'time_left': np.array([extract_scalar(self.observations[i], 'time_left', 0.0) for i in batch_indices], dtype=np.float32),
+                'yaw': np.array([extract_scalar(self.observations[i], 'yaw', 0.0) for i in batch_indices], dtype=np.float32),
+                'pitch': np.array([extract_scalar(self.observations[i], 'pitch', 0.0) for i in batch_indices], dtype=np.float32),
+                'place_table_safe': np.array([extract_scalar(self.observations[i], 'place_table_safe', 0.0) for i in batch_indices], dtype=np.float32),
+                'inv_logs': np.array([extract_scalar(self.observations[i], 'inv_logs', 0.0) for i in batch_indices], dtype=np.float32),
+                'inv_planks': np.array([extract_scalar(self.observations[i], 'inv_planks', 0.0) for i in batch_indices], dtype=np.float32),
+                'inv_sticks': np.array([extract_scalar(self.observations[i], 'inv_sticks', 0.0) for i in batch_indices], dtype=np.float32),
+                'inv_table': np.array([extract_scalar(self.observations[i], 'inv_table', 0.0) for i in batch_indices], dtype=np.float32),
+                'inv_axe': np.array([extract_scalar(self.observations[i], 'inv_axe', 0.0) for i in batch_indices], dtype=np.float32),
             }
             
             yield (
@@ -149,7 +157,7 @@ class PPOAgent:
         self,
         num_actions: int = 23,
         input_channels: int = 4,
-        num_scalars: int = 9,
+        num_scalars: int = 3,
         learning_rate: float = 3e-4,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
@@ -165,6 +173,8 @@ class PPOAgent:
         use_scalar_network: bool = False,
         scalar_hidden_dim: int = 64,
         scalar_output_dim: int = 64,
+        use_fusion_layer: bool = False,
+        fusion_hidden_dim: int = 128,
         device: str = None
     ):
         """
@@ -187,6 +197,8 @@ class PPOAgent:
             use_scalar_network: Whether to process scalars through 2-layer FC network
             scalar_hidden_dim: Hidden dimension for scalar network
             scalar_output_dim: Output dimension for scalar network
+            use_fusion_layer: Whether to add FC layer after concatenation for feature fusion
+            fusion_hidden_dim: Hidden dimension for fusion layer
             device: Device to use ('cuda', 'mps', 'cpu', or None for auto)
         """
         # Device setup
@@ -200,20 +212,27 @@ class PPOAgent:
         self.device = torch.device(device)
         print(f"PPOAgent using device: {self.device}")
 
-        # Store LR for resume logic
-        self.learning_rate = learning_rate
-
         # Network (now with configurable architecture!)
-        self.policy = ActorCriticNetwork(
-            num_actions=num_actions,
-            input_channels=input_channels,
-            num_scalars=num_scalars,
-            cnn_architecture=cnn_architecture,
-            attention_type=attention_type,
-            use_scalar_network=use_scalar_network,
-            scalar_hidden_dim=scalar_hidden_dim,
-            scalar_output_dim=scalar_output_dim
-        ).to(self.device)
+        # Use FiLM-CBAM architecture if specified
+        if cnn_architecture == 'film_cbam':
+            self.policy = FiLMCBAMPolicyNetwork(
+                num_actions=num_actions,
+                input_channels=input_channels,
+                num_scalars=num_scalars
+            ).to(self.device)
+        else:
+            self.policy = ActorCriticNetwork(
+                num_actions=num_actions,
+                input_channels=input_channels,
+                num_scalars=num_scalars,
+                cnn_architecture=cnn_architecture,
+                attention_type=attention_type,
+                use_scalar_network=use_scalar_network,
+                scalar_hidden_dim=scalar_hidden_dim,
+                scalar_output_dim=scalar_output_dim,
+                use_fusion_layer=use_fusion_layer,
+                fusion_hidden_dim=fusion_hidden_dim
+            ).to(self.device)
         
         # Optimizer
         self.optimizer = optim.Adam(self.policy.parameters(), lr=learning_rate)
@@ -235,7 +254,6 @@ class PPOAgent:
         # Counters
         self.step_count = 0
         self.update_count = 0
-        self.episode_count = 0 # New: Track episodes
 
         # Action frequency tracking (for debugging)
         self.action_counts = [0] * num_actions
@@ -258,8 +276,7 @@ class PPOAgent:
         action_int = action.item()
 
         # Track action frequency (for debugging)
-        if action_int < len(self.action_counts):
-            self.action_counts[action_int] += 1
+        self.action_counts[action_int] += 1
         self.last_actions.append(action_int)
         if len(self.last_actions) > 100:  # Keep last 100
             self.last_actions.pop(0)
@@ -322,8 +339,8 @@ class PPOAgent:
                 'top_actions': sorted(enumerate(probs_np), key=lambda x: x[1], reverse=True)[:5]
             }
 
-    def store_transition(self, state: dict, action: int, log_prob: float, 
-                         reward: float, value: float, done: bool):
+    def store_transition(self, state: dict, action: int, log_prob: float,
+                        reward: float, value: float, done: bool):
         """Store transition in rollout buffer."""
         self.buffer.add(state, action, log_prob, reward, value, done)
         self.step_count += 1
@@ -403,18 +420,25 @@ class PPOAgent:
     
     def _state_to_tensor(self, state: dict) -> dict:
         """Convert single state to tensor dict."""
+        # Helper to extract scalar value (handle both scalar and array formats)
+        def get_scalar(key, default=0.0):
+            val = state.get(key, default)
+            if isinstance(val, np.ndarray):
+                return float(val[0] if val.size > 0 else default)
+            return float(val if val is not None else default)
+        
         # Use numpy arrays to avoid "extremely slow" warning
         return {
             'pov': torch.tensor(state['pov'], dtype=torch.float32, device=self.device).unsqueeze(0),
-            'time_left': torch.tensor(np.array([state.get('time_left', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'yaw': torch.tensor(np.array([state.get('yaw', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'pitch': torch.tensor(np.array([state.get('pitch', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'place_table_safe': torch.tensor(np.array([state.get('place_table_safe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'inv_logs': torch.tensor(np.array([state.get('inv_logs', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'inv_planks': torch.tensor(np.array([state.get('inv_planks', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'inv_sticks': torch.tensor(np.array([state.get('inv_sticks', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'inv_table': torch.tensor(np.array([state.get('inv_table', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
-            'inv_axe': torch.tensor(np.array([state.get('inv_axe', 0.0)], dtype=np.float32), dtype=torch.float32, device=self.device),
+            'time_left': torch.tensor([get_scalar('time_left', 0.0)], dtype=torch.float32, device=self.device),
+            'yaw': torch.tensor([get_scalar('yaw', 0.0)], dtype=torch.float32, device=self.device),
+            'pitch': torch.tensor([get_scalar('pitch', 0.0)], dtype=torch.float32, device=self.device),
+            'place_table_safe': torch.tensor([get_scalar('place_table_safe', 0.0)], dtype=torch.float32, device=self.device),
+            'inv_logs': torch.tensor([get_scalar('inv_logs', 0.0)], dtype=torch.float32, device=self.device),
+            'inv_planks': torch.tensor([get_scalar('inv_planks', 0.0)], dtype=torch.float32, device=self.device),
+            'inv_sticks': torch.tensor([get_scalar('inv_sticks', 0.0)], dtype=torch.float32, device=self.device),
+            'inv_table': torch.tensor([get_scalar('inv_table', 0.0)], dtype=torch.float32, device=self.device),
+            'inv_axe': torch.tensor([get_scalar('inv_axe', 0.0)], dtype=torch.float32, device=self.device),
         }
     
     def _batch_to_tensor(self, obs: dict) -> dict:
@@ -434,109 +458,27 @@ class PPOAgent:
     
     def save(self, path: str):
         """Save agent state."""
-        progress_settings = {
+        torch.save({
+            'policy_state_dict': self.policy.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'step_count': self.step_count,
             'update_count': self.update_count,
-            'episode_count': self.episode_count,
             'action_counts': self.action_counts,
             'last_actions': self.last_actions,
-            'learning_rate': self.learning_rate
-        }
-
-        network = {
-            'policy_state_dict': self.policy.state_dict()
-        }
-
-        torch.save({
-            'progress_settings': progress_settings,
-            'network': network,
         }, path)
         print(f"PPO agent saved to {path}")
     
     def load(self, path: str):
-        """Load agent state with robust action mismatch handling and hyperparam override."""
+        """Load agent state."""
         checkpoint = torch.load(path, map_location=self.device)
-
-        if 'network' in checkpoint and 'progress_settings' in checkpoint:
-            print("Loading new format checkpoint...")
-            network_state = checkpoint['network']
-            settings = checkpoint['progress_settings']
-        else:
-            print("Loading old format checkpoint...")
-            network_state = checkpoint
-            settings = checkpoint
-        
-        # Cross-Policy Check: DQN -> PPO
-        if 'policy_state_dict' not in network_state and 'q_network_state_dict' in network_state:
-            print(f"\nCross-Policy Load Detected: DQN Checkpoint -> PPO Agent")
-            dqn_state = network_state['q_network_state_dict']
-            ppo_constructed_state = {}
-            
-            for k, v in dqn_state.items():
-                if any(scope in k for scope in ['cnn.', 'attention.', 'scalar_network.']):
-                    ppo_constructed_state[k] = v
-                        
-            network_state['policy_state_dict'] = ppo_constructed_state
-            settings = {}
-
-        # 1. Load Policy with Shape Checking (Action space change handling)
-        saved_state = network_state.get('policy_state_dict', {})
-        current_state = self.policy.state_dict()
-        new_state = {}
-        
-        mismatch_detected = False
-        for k, v in current_state.items():
-            if k in saved_state:
-                saved_v = saved_state[k]
-                if saved_v.shape != v.shape:
-                    mismatch_detected = True
-                    print(f"⚠️  Shape mismatch for {k}: saved {saved_v.shape}, current {v.shape}")
-                    
-                    slices = tuple(slice(0, min(ds, dc)) for ds, dc in zip(saved_v.shape, v.shape))
-                    
-                    try:
-                        v[slices] = saved_v[slices]
-                    except Exception as e:
-                         print(f"Could not auto-slice {k}: {e}. Keeping random init.")
-                         
-                    new_state[k] = v
-                else:
-                    new_state[k] = saved_v
-            else:
-                new_state[k] = v
-        
-        self.policy.load_state_dict(new_state)
-        
-        if mismatch_detected:
-            print("✅ Handled action space mismatch by preserving matching weights.")
-
-        # 2. Load Optimizer (Reset if failure, force LR)
-        if 'optimizer_state_dict' in settings:
-            try:
-                self.optimizer.load_state_dict(settings['optimizer_state_dict'])
-                
-                # FORCE update learning rate
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
-                print(f"Optimizer loaded")
-            except Exception as e:
-                print(f"Optimizer load failed (likely shape change), resetting optimizer: {e}")
-                self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learning_rate)
-
-        # 3. Counters
-        self.step_count = settings.get('step_count', 0)
-        self.update_count = settings.get('update_count', 0)
-        self.episode_count = settings.get('episode_count', 0)
-        
-        # Load action tracking if available 
-        saved_counts = settings.get('action_counts', [])
-        if len(saved_counts) == self.num_actions:
-            self.action_counts = saved_counts
-        else:
-            self.action_counts = [0] * self.num_actions # Reset if size changed
-
-        self.last_actions = settings.get('last_actions', [])
+        self.policy.load_state_dict(checkpoint['policy_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.step_count = checkpoint['step_count']
+        self.update_count = checkpoint['update_count']
+        # Load action tracking if available (backwards compatible)
+        self.action_counts = checkpoint.get('action_counts', [0] * self.num_actions)
+        self.last_actions = checkpoint.get('last_actions', [])
+        print(f"PPO agent loaded from {path}")
 
 
 if __name__ == "__main__":
@@ -583,3 +525,4 @@ if __name__ == "__main__":
     print(f"  Entropy: {metrics['entropy']:.4f}")
     
     print("\n✅ PPOAgent validated!")
+

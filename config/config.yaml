@@ -75,8 +75,9 @@ network:
 
   # CNN Architecture selection
   # Options: 'tiny' (~150K), 'small' (~400K), 'medium' (~600K), 'wide' (~1M), 'deep' (~500K)
+  #          'film_cbam' - FiLM + CBAM + Conv4 + Dual Fusion (early + late fusion)
   # CNN output dimension is architecture-dependent (256 for tiny, 512 for others)
-  architecture: "medium"              # Default: small (Atari DQN style, proven baseline)
+  architecture: "film_cbam"           # FiLM + CBAM + Conv4 + Dual Fusion architecture
 
   # Attention mechanism (optional)
   # Options: 'none', 'spatial', 'cbam', 'treechop_bias'
@@ -88,8 +89,12 @@ network:
   
   # Scalar network (optional)
   use_scalar_network: true            # Enable extra FC layer for scalar processing
-  scalar_hidden_dim: 64               # Hidden layer size in scalar network
-  scalar_output_dim: 64               # Output dimension (fused with CNN features)
+  scalar_hidden_dim: 32               # Hidden layer size in scalar network
+  scalar_output_dim: 32               # Output dimension (fused with CNN features)
+
+  # Fusion layer (optional)
+  use_fusion_layer: true             # Enable FC layer after concatenating visual and scalar features
+  fusion_hidden_dim: 128              # Hidden layer size for fusion (default: 128)
 # =============================================================================
 # ACTION SPACE
 # =============================================================================
@@ -114,8 +119,8 @@ action_space:
   #          attack, turn_left_30, turn_left_45, and craft_entire_axe
   # Current: noop, forward, back, right, left, jump, attack, turn_left_30, turn_left_45,
   #          turn_right_30, turn_right_45, look_up_12, look_down_12,
-  #          craft_planks, make_table, craft_sticks, craft_entire_axe, attack_5
-  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 15, 17, 19, 20, 21, 23, 24]
+  #          craft_planks, make_table, craft_sticks, craft_entire_axe
+  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 15, 17, 19, 20, 21, 23]
 
 # =============================================================================
 # DQN AGENT
@@ -195,7 +200,7 @@ ppo:
   gamma: 0.99                        # Discount factor
   gae_lambda: 0.95                   # GAE lambda
   clip_epsilon: 0.2                  # PPO clipping parameter
-  entropy_coef: 0.02                 # Entropy bonus
+  entropy_coef: 0.05                 # Entropy bonus
   value_coef: 0.5                    # Value loss coefficient
   max_grad_norm: 0.5                 # Gradient clipping
   n_steps: 1024                      # Steps per rollout

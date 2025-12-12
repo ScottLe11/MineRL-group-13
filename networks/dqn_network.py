@@ -18,7 +18,7 @@ class DQNNetwork(nn.Module):
     Architecture:
         Visual Input (4, 84, 84) -> CNN -> [Attention] -> (cnn_dim,)
         Scalar Input (9,) -> [ScalarNetwork] -> (scalar_dim,)
-        Combined -> DuelingHead -> Q-values (num_actions,)
+        Combined -> [FusionLayer] -> DuelingHead -> Q-values (num_actions,)
 
     Observation format expected:
         {
@@ -44,7 +44,9 @@ class DQNNetwork(nn.Module):
         attention_type: str = 'none',
         use_scalar_network: bool = False,
         scalar_hidden_dim: int = 64,
-        scalar_output_dim: int = 64
+        scalar_output_dim: int = 64,
+        use_fusion_layer: bool = False,
+        fusion_hidden_dim: int = 128
     ):
         """
         Args:
@@ -56,6 +58,8 @@ class DQNNetwork(nn.Module):
             use_scalar_network: Whether to process scalars through 2-layer FC network (default: False)
             scalar_hidden_dim: Hidden dimension for scalar network (default: 64)
             scalar_output_dim: Output dimension for scalar network (default: 64)
+            use_fusion_layer: Whether to add FC layer after concatenation for feature fusion (default: False)
+            fusion_hidden_dim: Hidden dimension for fusion layer (default: 128)
         """
         super().__init__()
 
@@ -117,11 +121,23 @@ class DQNNetwork(nn.Module):
             self.scalar_network = None
             scalar_dim = num_scalars
 
-        # Combined feature dimension
+        # Combined feature dimension (before fusion)
         combined_dim = cnn_output_dim + scalar_dim
 
+        # Optional fusion layer for learning interactions between visual and scalar features
+        self.use_fusion_layer = use_fusion_layer
+        if use_fusion_layer:
+            self.fusion_layer = nn.Sequential(
+                nn.Linear(combined_dim, fusion_hidden_dim),
+                nn.ReLU()
+            )
+            final_dim = fusion_hidden_dim
+        else:
+            self.fusion_layer = None
+            final_dim = combined_dim
+
         # Dueling head
-        self.head = DuelingHead(input_dim=combined_dim, num_actions=num_actions)
+        self.head = DuelingHead(input_dim=final_dim, num_actions=num_actions)
     
     def forward(self, obs: dict, return_attention: bool = False):
         """
@@ -210,6 +226,10 @@ class DQNNetwork(nn.Module):
 
         # Concatenate visual and scalar features
         combined = torch.cat([visual_features, scalar_features], dim=1)  # (batch, cnn_dim + scalar_dim)
+
+        # Optional fusion layer for feature interaction
+        if self.fusion_layer is not None:
+            combined = self.fusion_layer(combined)  # (batch, fusion_hidden_dim)
 
         # Compute Q-values
         q_values = self.head(combined)  # (batch, num_actions)

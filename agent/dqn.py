@@ -508,20 +508,22 @@ class DQNAgent:
         
         if mismatch_detected:
             print("Handled action space mismatch by preserving matching weights.")
+            print("⚠️  Resetting optimizer due to network shape change...")
+            self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
 
-        # 2. Load Optimizer but FORCE current Learning Rate
-        if 'optimizer_state_dict' in settings:
-            try:
-                self.optimizer.load_state_dict(settings['optimizer_state_dict'])
-                
-                # Force update learning rate from current config
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.learning_rate
+            # 2. Load Optimizer but FORCE current Learning Rate
+            if 'optimizer_state_dict' in settings and not mismatch_detected:
+                try:
+                    self.optimizer.load_state_dict(settings['optimizer_state_dict'])
                     
-                print(f"Optimizer loaded")
-            except Exception as e:
-                print(f"Optimizer load failed (likely shape change), resetting optimizer: {e}")
-                self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
+                    # Force update learning rate from current config
+                    for param_group in self.optimizer.param_groups:
+                        param_group['lr'] = self.learning_rate
+                        
+                    print(f"Optimizer loaded")
+                except Exception as e:
+                    print(f"Optimizer load failed (likely shape change), resetting optimizer: {e}")
+                    self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
 
         # 3. Restore Counters
         self.step_count = settings.get('step_count', 0)

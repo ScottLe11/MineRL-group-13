@@ -510,9 +510,11 @@ class PPOAgent:
         
         if mismatch_detected:
             print("✅ Handled action space mismatch by preserving matching weights.")
+            print("⚠️  Resetting optimizer due to network shape change...")
+            self.optimizer = optim.Adam(self.policy.parameters(), lr=self.learning_rate)
 
         # 2. Load Optimizer (Reset if failure, force LR)
-        if 'optimizer_state_dict' in settings:
+        if 'optimizer_state_dict' in settings and not mismatch_detected:
             try:
                 self.optimizer.load_state_dict(settings['optimizer_state_dict'])
                 

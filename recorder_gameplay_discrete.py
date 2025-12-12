@@ -98,10 +98,14 @@ def render_ui(screen, queue_state, enabled_actions, key_mapping):
         )
         screen.blit(steps_text, (bar_x + bar_w + 10, bar_y))
 
-        # Queued action
-        if queue_state['queued_action'] is not None:
+        # Queued actions (may be multiple now)
+        queued = queue_state.get('queued_actions', [])
+        queued_names = queue_state.get('queued_names', [])
+        if len(queued) > 0:
+            more = f" (+{len(queued)-1} more)" if len(queued) > 1 else ""
+            first_name = queued_names[0] if len(queued_names) > 0 else str(queued[0])
             queued_text = font_small.render(
-                f"QUEUED: {queue_state['queued_name']}",
+                f"QUEUED: {first_name}{more}",
                 True, (255, 255, 100)
             )
             screen.blit(queued_text, (10, y_offset + 70))
@@ -220,11 +224,20 @@ if __name__ == "__main__":
     env = TrajectoryRecorder(env, log_dir=LOG_DIR_NAME)
     env.reset()
 
-    # Initialize action queue
-    action_queue = ActionQueue(enabled_actions)
+    # Initialize action queue (allow multi-slot queue so user can chain attacks)
+    # Increase queue_size if you want to chain more actions (useful for chopping trees)
+    action_queue = ActionQueue(enabled_actions, queue_size=8)
 
     # Pygame setup
     pygame.init()
+    # Enable key repeat so holding an action key will generate repeated KEYDOWN events
+    # (delay ms, interval ms)
+    try:
+        pygame.key.set_repeat(200, 50)
+    except Exception:
+        # Some pygame builds may not support set_repeat; ignore if unavailable
+        pass
+
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
     pygame.display.set_caption("MineRL Discrete Action Recorder")
     clock = pygame.time.Clock()
@@ -237,7 +250,7 @@ if __name__ == "__main__":
     print("  - Press action keys to queue actions")
     print("  - ESC: Quit")
     print("  - Actions execute for their full duration")
-    print("  - You can queue ONE action while current executes")
+    print(f"  - You can queue up to {action_queue.queue_size} actions while current executes")
     print("=" * 60 + "\n")
 
     # Main game loop

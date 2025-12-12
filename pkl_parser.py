@@ -243,12 +243,6 @@ def extract_bc_data(raw_transitions, config: dict):
                 if raw_action == -1:
                     raw_action = 0
                 
-                ## this remaps attack 10/5 to basic attack: might need to be chanaged later?    
-                # Remap extended attack (25 or 24) to basic attack (6) if needed
-                if raw_action in [24, 25] and raw_action not in enabled_actions and 6 in enabled_actions:
-                    #print(f"[INFO] Remapping action {raw_action} to 6 (attack) for transition {i}.")
-                    raw_action = 6
-
                 # Direct discrete action index - no conversion needed!
                 # Map from original index (0-25) to enabled action index (0-N-1)
                 if raw_action in enabled_actions:

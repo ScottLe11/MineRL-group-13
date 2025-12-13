@@ -99,8 +99,8 @@ MineRL-group-13/
 │   ├── hold_attack.py           # Attack duration handling
 │   ├── reward.py                # Reward scaling
 │   ├── observation.py           # Time/yaw/pitch scalars
-│   ├── actions.py               #
-│   ├── discrete_actions.py      # 
+│   ├── actions.py               # Action Space Standardization
+│   ├── discrete_actions.py      # Discrete Action Space Definition
 │   ├── frameskip.py             # Repeats actions over multiple frames
 │   └── recorder.py              # Saves gameplay trajectories to files
 │
@@ -182,9 +182,9 @@ All settings in `config/config.yaml`:
 | 11-14 | turn_right | 4 | 30°, 45°, 60°, 90° |
 | 15-16 | look_up | 4 | 12°, 20° |
 | 17-18 | look_down | 4 | 12°, 20° |
-| 19 | craft_planks | ~50 | Logs → Planks |
-| 20 | craft_sticks | ~50 | Planks → Sticks |
-| 21 | CRAFT_TABLE_AND_AXE | ~200 | Craft table -> Place Table -> Craft axe |
+| 19 | craft_planks | ~16 | Logs → Planks |
+| 20 | craft_sticks | ~12 | Planks → Sticks |
+| 21 | CRAFT_TABLE_AND_AXE | ~32 | Craft table -> Place Table -> Craft axe |
 
 ---
 

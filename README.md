@@ -58,9 +58,7 @@ chmod +x scripts/*.sh
 #### Window Users Installation Guide
 ```bash
 # Java JDK 8 (required for MineRL)
-brew tap AdoptOpenJDK/openjdk
-brew install --cask adoptopenjdk8 
-export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
+Go to Oracle and download Java 1.8.0
 
 # Create environment
 conda create -n minerl-env python=3.9

@@ -143,6 +143,7 @@ MineRL-group-13/
 │
 ├── scripts/                              # Entry points
 │   ├── train.py                          # Training script
+│   ├── evaluate.py                       # Evaluates trained RL agents
 │   ├── remove_unwanted_drops.sh          # Removes clutter item drops
 │   ├── restore_original_jar.sh           # Restores original MineRL JAR
 │   ├── setup_minerl_environment.sh       # Configures biome and drops

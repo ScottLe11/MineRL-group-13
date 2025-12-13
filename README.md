@@ -88,6 +88,11 @@ python -m scripts.train --render
 # Resume from a checkpoint
 python -m scripts.train --resume best_model/checkpoint_ppo_ep3000.pt --render
 ```
+
+### Evaluate a Checkpoint
+```bash
+python -m scripts.evaluate --checkpoint best_model/checkpoint_ppo_ep3000.pt --episodes 10
+```
 ---
 
 ## 📁 Project Structure

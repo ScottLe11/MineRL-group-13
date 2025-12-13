@@ -160,15 +160,10 @@ MineRL-group-13/
 │   ├── crafting_utils.py        # Inventory parsing and GUI helpers
 │   └── gui_clicker.py           # GUI interaction helper
 │
-├── tests/                       # Unit tests (47 tests)
-│   ├── test_networks.py
-│   ├── recorder_gameplay.py
-│   └── test_wrappers.py
-│
-├── pkl_parser.py                # Converts recordings into training data
-├── recorder_gameplay.py         # Records gameplay using standard controls
-├── treechop_spec.py             # Configurable MineRL tree-chopping environment
-└── main.py                      # Environment registration and vectorization setup
+├── pkl_parser.py                  # Converts recordings into training data
+├── recorder_gameplay_discrete.py  # Records gameplay using standard controls
+├── treechop_spec.py               # Configurable MineRL tree-chopping environment
+└── main.py                        # Environment registration and vectorization setup
 ```
 
 ---
@@ -242,7 +237,7 @@ device: "auto"                    # cpu, cuda, mps, or auto
 
 ---
 
-## 🎮 Action Space (23 Actions)
+## 🎮 Action Space (22 Actions)
 
 | Index | Action | Frames | Description |
 |-------|--------|--------|-------------|
@@ -285,6 +280,10 @@ reward_per_frame = (logs × wood_value) + step_penalty
 
 - **wood_value** points per log (default: 1.0)
 - **step_penalty** per MineRL frame (default: -0.001, so -0.004 per decision)
+- **axe_reward** axe reward for the first time
+- **plank_reward** plank reward for the first time
+- **stick_reward** stick reward for the first time
+- **waste_penalty** if making stick after the first time punish it
 
 **Example**: Mine 1 log over 4 frames = `(1 × 1.0) + (-0.001 × 4) = +0.996`
 

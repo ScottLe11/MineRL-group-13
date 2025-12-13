@@ -143,7 +143,22 @@ MineRL-group-13/
 │   ├── transfer_learning.py:             # Maps weights to new actions
 │   ├── verify_transfer.py                # Tests model loading and inference
 │   └── visualize_attention.py            # Saves attention heatmaps from checkpoint
-│ 
+|
+│── test/                                  # Test dir with test scripts
+│   ├── _init__.py                         # init for test module
+│   ├── run_tests.sh                       # Test Execution Script
+│   ├── test_agent.py                      # Agent Logic Tests
+│   ├── test_discrete_recording_errors.py   # Discrete Recording Tests
+│   ├── test_discrete_recording_pipeline.py # Discrete Recording Tests
+│   ├── test_exploration.py                 # Exploration Strategy Tests
+│   ├── test_integration.py                 # System Integration Tests
+│   ├── test_macros.py:                     # Maps weights to new actions
+│   ├── test_monitoring.py                  # Metric and Logging Tests
+│   |── test_network.py                     # Macro/High-Level test
+├   |── test_scalar_network.py:             # Network Architecture Tests
+│   ├── test_wrappers.py                    # Wrapper Tests
+│    
+|
 ├── recording/                    # Manages action queuing logic
 │   └── action_queue.py           # Ensures actions finish before new ones start
 │ 
@@ -182,7 +197,7 @@ All settings in `config/config.yaml`:
 | 11-14 | turn_right | 4 | 30°, 45°, 60°, 90° |
 | 15-16 | look_up | 4 | 12°, 20° |
 | 17-18 | look_down | 4 | 12°, 20° |
-| 19 | craft_planks | ~16 | Logs → Planks |
+| 19 | craft_planks | 16 | Logs → Planks |
 | 20 | craft_sticks | ~12 | Planks → Sticks |
 | 21 | CRAFT_TABLE_AND_AXE | ~32 | Craft table -> Place Table -> Craft axe |
 
@@ -273,18 +288,6 @@ Agent
 3. **Train**: Sample batch → compute loss → update network
 4. **Log**: TensorBoard metrics (loss, Q-values, rewards)
 5. **Save**: Periodic checkpoints
-
----
-
-## 🔍 Key Design Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Frame size | 84×84 | Atari standard, good balance |
-| Frame stack | 4 | Motion/temporal information |
-| Step penalty | Once per decision | Not 4× per frame |
-| Macros | Always execute | Learn through experience |
-| Inventory | Not observed | Learn from visual hotbar |
 
 ---
 

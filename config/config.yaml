@@ -64,7 +64,7 @@ environment:
   # Curriculum (starting conditions) - see config/CURRICULUM_LEARNING.md
   curriculum:
     spawn_type: "random"             # "random" or "near_tree" (near_tree needs custom handler)
-    with_logs: 5                    # Number of starting logs (0-10)
+    with_logs: 0                    # Number of starting logs (0-10)
     with_axe: false                  # Start with wooden axe equipped
 
 # =============================================================================
@@ -232,12 +232,12 @@ algorithm: "ppo"
 #   - Total wood reward: +7.0 (same as final inventory!)
 #
 rewards:
-  wood_value: 5.0                    # Points per log change (mined or used)
+  wood_value: 1.0                    # Points per log change (mined or used)
   step_penalty: -0.001               # Penalty per frame (encourages speed)
-  axe_reward: 15.0                   # Axe reward for the first time
-  plank_reward: 20.0                 # Plank reward for the first time
-  stick_reward: 10.0                 # Stick reward for the first time
-  waste_penalty: -4.0                # If making stick after the first time punish it
+  axe_reward: 0.3                   # Axe reward for the first time
+  plank_reward: 0.3                 # Plank reward for the first time
+  stick_reward: 0.15                 # Stick reward for the first time
+  waste_penalty: -0.5                # If making stick after the first time punish it
 
 # =============================================================================
 # HARDWARE

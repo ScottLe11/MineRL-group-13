@@ -85,20 +85,9 @@ python -m scripts.train
 # With window showing agent gameplay
 python -m scripts.train --render
 
-# With custom config
-python -m scripts.train --config config/config.yaml
+# Resume from a checkpoint
+python -m scripts.train --resume best_model/checkpoint_ppo_ep3000.pt --render
 ```
-
-### Run Tests
-```bash
-pytest tests/ -v
-```
-
-### Evaluate a Checkpoint
-```bash
-python -m scripts.evaluate --checkpoint checkpoints/final_model.pt --episodes 10
-```
-
 ---
 
 ## 📁 Project Structure
@@ -133,7 +122,9 @@ MineRL-group-13/
 │   └── ppo.py                   # PPO agent with GAE
 │
 ├── best_model/                  # Contains the best checkpoints
-│   └── best_model_ppo_ep2050.pt # Best Checkpoint for ppo (training)
+│   ├── checkpoint_ppo_ep2500.pt # Best Checkpoint for ppo with bias towards crafting
+│   ├── checkpoint_ppo_ep3000.pt # Best Checkpoint for ppo with complete action and good at chopping trees
+│   └── best_model_ppo_ep2050.pt # Best Checkpoint for ppo with 6 action space(training)
 │
 ├── utils/                       # Utilities
 │   ├── config.py                # Config loader
@@ -145,14 +136,16 @@ MineRL-group-13/
 │   ├── video_recorder.py        # Records gameplay at training milestones
 │   └── visualization.py         # Utilities for plots and heatmaps
 │
-├── scripts/                        # Entry points
-│   ├── train.py                    # Training script
-│   ├── remove_unwanted_drops.sh    # Removes clutter item drops
-│   ├── restore_original_jar.sh     # Restores original MineRL JAR
-│   ├── setup_minerl_environment.sh # Configures biome and drops
-│   ├── setup_tall_birch_biome.sh   # Forces tall birch forest spawn
-│   ├── train.py                    # Training script
-│   └── visualize_attention.py      # Saves attention heatmaps from checkpoint
+├── scripts/                              # Entry points
+│   ├── train.py                          # Training script
+│   ├── remove_unwanted_drops.sh          # Removes clutter item drops
+│   ├── restore_original_jar.sh           # Restores original MineRL JAR
+│   ├── setup_minerl_environment.sh       # Configures biome and drops
+│   ├── setup_tall_birch_biome.sh         # Forces tall birch forest spawn
+│   ├── prepare_transfer_for_training.py  # Prepares checkpoint for PPO training
+│   ├── transfer_learning.py:             # Maps weights to new actions
+│   ├── verify_transfer.py                # Tests model loading and inference
+│   └── visualize_attention.py            # Saves attention heatmaps from checkpoint
 │ 
 ├── recording/                    # Manages action queuing logic
 │   └── action_queue.py           # Ensures actions finish before new ones start
@@ -192,17 +185,57 @@ environment:
   max_steps: 8000                 # Max steps per episode
 
 dqn:
-  num_actions: 23                 # Total discrete actions
-  learning_rate: 0.0001
-  gamma: 0.99
-  batch_size: 32
+  num_actions: null                  # Auto-computed from action_space config
+  
+  # Learning
+  learning_rate: 0.0001              # Adam learning rate
+  gamma: 0.99                        # Discount factor
+  batch_size: 64                     # Training batch size
+  gradient_clip: 5                # Max gradient norm
+  
+  # Replay Buffer
   replay_buffer:
-    capacity: 100000
-    min_size: 10000
+    capacity: 40000                 # Buffer size (experiences)
+    min_size: 4000                  # Min experiences before training
+  
+  # Exploration (epsilon-greedy)
+  exploration:
+    epsilon_start: 0.95               # Starting epsilon
+    epsilon_end: 0.05                 # Final epsilon
+    epsilon_decay_steps: 40000       # Steps for linear decay
+  
+  # Target Network
+  target_update:
+    method: "hard"                   # "soft" or "hard"
+    tau: 0.005                       # Soft update coefficient
+    hard_update_freq: 400           # Steps between hard updates (if hard)
+  
+  # Prioritized Experience Replay (optional)
+  prioritized_replay:
+    enabled: true                   # Use PER instead of uniform sampling
+    alpha: 0.6                       # Priority exponent (0=uniform, 1=full prioritization)
+    beta_start: 0.4                  # Initial importance sampling exponent
+    beta_end: 1.0                    # Final importance sampling exponent (anneals with epsilon)
+
+ppo:
+  learning_rate: 0.0001              # Typically higher than DQN
+  gamma: 0.99                        # Discount factor
+  gae_lambda: 0.95                   # GAE lambda
+  clip_epsilon: 0.2                  # PPO clipping parameter
+  entropy_coef: 0.02                 # Entropy bonus
+  value_coef: 0.5                    # Value loss coefficient
+  max_grad_norm: 0.5                 # Gradient clipping
+  n_steps: 1024                      # Steps per rollout
+  n_epochs: 6                       # Epochs per update
+  batch_size: 64                     # Minibatch size
 
 rewards:
   wood_value: 1.0                 # Points per log
   step_penalty: -0.001            # -0.001 per frame
+  axe_reward: 15.0                # Axe reward for the first time
+  plank_reward: 20.0              # Plank reward for the first time
+  stick_reward: 10.0              # Stick reward for the first time
+  waste_penalty: -4.0             # If making stick after the first time punish it
 
 device: "auto"                    # cpu, cuda, mps, or auto
 ```
@@ -222,9 +255,8 @@ device: "auto"                    # cpu, cuda, mps, or auto
 | 15-16 | look_up | 4 | 12°, 20° |
 | 17-18 | look_down | 4 | 12°, 20° |
 | 19 | craft_planks | ~50 | Logs → Planks |
-| 20 | make_table | ~100 | Craft + place table |
-| 21 | craft_sticks | ~50 | Planks → Sticks |
-| 22 | craft_axe | ~100 | Craft + equip axe |
+| 20 | craft_sticks | ~50 | Planks → Sticks |
+| 21 | CRAFT_TABLE_AND_AXE | ~200 | Craft table -> Place Table -> Craft axe |
 
 ---
 
@@ -236,6 +268,12 @@ device: "auto"                    # cpu, cuda, mps, or auto
 | time | (1,) | Normalized time remaining [0, 1] |
 | yaw | (1,) | Horizontal rotation [-1, 1] |
 | pitch | (1,) | Vertical rotation [-1, 1] |
+| place_table_safe | (1,) | Heuristic flag (1.0 if safe to place, else 0.0)|
+| inv_logs | (1,) | Inventory count: Logs |
+| inv_planks | (1,) | Inventory count: Planks |
+| inv_sticks | (1,) | Inventory count: Sticks |
+| inv_table | (1,) | Inventory count: Crafting Tables |
+| inv_axe | (1,) | Inventory count: Wooden Axes |
 
 ---
 
@@ -263,9 +301,9 @@ HoldAttackWrapper (attack duration)
     ↓
 RewardWrapper (add step penalty)
     ↓
-ObservationWrapper (time, yaw, pitch)
+ObservationWrapper (time, yaw, pitch, etc)
     ↓
-ExtendedActionWrapper (23 discrete actions)
+ConfigurableActionWrapper (22 discrete actions)
     ↓
 Agent
 ```
@@ -288,20 +326,6 @@ Agent
 - Rollout buffer (2048 steps)
 
 ---
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run specific test file
-pytest tests/test_networks.py -v
-
-# Run with coverage
-pytest tests/ --cov=.
-```
-
 **Test coverage**:
 - 47 tests across networks, agent, and wrappers
 - Network dimensions, gradient flow, soft updates
@@ -345,13 +369,3 @@ See `REVISED_ARCHITECTURE.md` for detailed implementation plan.
 - **OpenCV** - Image processing
 - **TensorBoard** - Monitoring
 - **pytest** - Testing
-
----
-
-## 📝 License
-
-[Your license here]
-
----
-
-**Ready to train! 🚀🌳**

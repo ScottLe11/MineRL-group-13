@@ -1,10 +1,5 @@
 # MineRL Tree-Chopping Deep RL Agent
 
-**Project Status**: ✅ Core Implementation Complete - Ready for Testing
-**Timeline**: 1.5 weeks
-**Algorithms**: DQN (Double Dueling) and PPO
-
----
 
 ## 🎯 Project Goal
 
@@ -51,7 +46,6 @@ cp -rf ./minerl/minerl/MCP-Reborn/* "$TARGET_DIR"
 pip install -r requirements.txt
 
 # Set up biome
-chmod +x scripts/*.sh
 ./scripts/setup_minerl_environment.sh
 ```
 
@@ -71,7 +65,6 @@ pip install -r requirements.txt
 pip install git+https://github.com/minerllabs/minerl@v1.0.2
 
 # Set up biome
-chmod +x scripts/*.sh
 ./scripts/setup_minerl_environment.sh
 ```
 
@@ -89,7 +82,7 @@ python -m scripts.train --resume best_model/checkpoint_ppo_ep3000.pt --render
 
 ### Evaluate a Checkpoint
 ```bash
-python -m scripts.evaluate --checkpoint best_model/checkpoint_ppo_ep3000.pt --episodes 10
+python -m scripts.evaluate --checkpoint best_model/checkpoint_ppo_ep3000.pt --algorithm ppo
 ```
 ---
 
@@ -106,15 +99,15 @@ MineRL-group-13/
 │   ├── hold_attack.py           # Attack duration handling
 │   ├── reward.py                # Reward scaling
 │   ├── observation.py           # Time/yaw/pitch scalars
-│   ├── actions.py               # 21 discrete actions
-│   ├── discrete_actions.py      # 26 discrete actions.
+│   ├── actions.py               #
+│   ├── discrete_actions.py      # 
 │   ├── frameskip.py             # Repeats actions over multiple frames
 │   └── recorder.py              # Saves gameplay trajectories to files
 │
 ├── networks/                    # Neural network architectures
 │   ├── attention.py             # Focuses on relevant screen regions
 │   ├── scalar_network.py.py     # Processes non-visual numeric data
-│   ├── cnn.py                   # SmallCNN (84x84 → 512 features)
+│   ├── cnn.py                   # All CNN architectures 
 │   ├── dueling_head.py          # Dueling Q-value head
 │   ├── dqn_network.py           # Full DQN network
 │   └── policy_network.py        # Actor-Critic for PPO
@@ -175,70 +168,6 @@ MineRL-group-13/
 ## 🔧 Configuration
 
 All settings in `config/config.yaml`:
-
-```yaml
-algorithm: "dqn"                  # "dqn" or "ppo"
-
-environment:
-  frame_shape: [84, 84]           # Grayscale frame size
-  max_steps: 8000                 # Max steps per episode
-
-dqn:
-  num_actions: null                  # Auto-computed from action_space config
-  
-  # Learning
-  learning_rate: 0.0001              # Adam learning rate
-  gamma: 0.99                        # Discount factor
-  batch_size: 64                     # Training batch size
-  gradient_clip: 5                # Max gradient norm
-  
-  # Replay Buffer
-  replay_buffer:
-    capacity: 40000                 # Buffer size (experiences)
-    min_size: 4000                  # Min experiences before training
-  
-  # Exploration (epsilon-greedy)
-  exploration:
-    epsilon_start: 0.95               # Starting epsilon
-    epsilon_end: 0.05                 # Final epsilon
-    epsilon_decay_steps: 40000       # Steps for linear decay
-  
-  # Target Network
-  target_update:
-    method: "hard"                   # "soft" or "hard"
-    tau: 0.005                       # Soft update coefficient
-    hard_update_freq: 400           # Steps between hard updates (if hard)
-  
-  # Prioritized Experience Replay (optional)
-  prioritized_replay:
-    enabled: true                   # Use PER instead of uniform sampling
-    alpha: 0.6                       # Priority exponent (0=uniform, 1=full prioritization)
-    beta_start: 0.4                  # Initial importance sampling exponent
-    beta_end: 1.0                    # Final importance sampling exponent (anneals with epsilon)
-
-ppo:
-  learning_rate: 0.0001              # Typically higher than DQN
-  gamma: 0.99                        # Discount factor
-  gae_lambda: 0.95                   # GAE lambda
-  clip_epsilon: 0.2                  # PPO clipping parameter
-  entropy_coef: 0.02                 # Entropy bonus
-  value_coef: 0.5                    # Value loss coefficient
-  max_grad_norm: 0.5                 # Gradient clipping
-  n_steps: 1024                      # Steps per rollout
-  n_epochs: 6                       # Epochs per update
-  batch_size: 64                     # Minibatch size
-
-rewards:
-  wood_value: 1.0                 # Points per log
-  step_penalty: -0.001            # -0.001 per frame
-  axe_reward: 15.0                # Axe reward for the first time
-  plank_reward: 20.0              # Plank reward for the first time
-  stick_reward: 10.0              # Stick reward for the first time
-  waste_penalty: -4.0             # If making stick after the first time punish it
-
-device: "auto"                    # cpu, cuda, mps, or auto
-```
-
 ---
 
 ## 🎮 Action Space (22 Actions)
@@ -356,12 +285,6 @@ Agent
 | Step penalty | Once per decision | Not 4× per frame |
 | Macros | Always execute | Learn through experience |
 | Inventory | Not observed | Learn from visual hotbar |
-
----
-
-## 📚 Architecture Document
-
-See `REVISED_ARCHITECTURE.md` for detailed implementation plan.
 
 ---
 

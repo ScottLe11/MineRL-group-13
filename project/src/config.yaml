@@ -1,0 +1,93 @@
+bc:
+  data_path: "bc_expert_data.npz"
+  learning_rate: 0.0003
+  batch_size: 64
+  gradient_clip: 1.0
+  q_regularization: 0.01
+  prefill_replay_buffer: false
+  lambda_supervised: 1.0
+  lambda_td: 1.0
+  lambda_margin: 1.0
+  lambda_l2: 0.00001
+  margin: 0.8
+environment:
+  name: "MineRLcustom_treechop-v0"
+  episode_seconds: 60
+  frame_shape: [84, 84]
+  frame_stack: 4
+  curriculum:
+    spawn_type: "random"
+    with_logs: 5
+    with_axe: false
+network:
+  input_channels: 4
+  architecture: "medium"
+  attention: "cbam"
+  use_scalar_network: true
+  scalar_hidden_dim: 64
+  scalar_output_dim: 64
+action_space:
+  preset: "custom"
+  enabled_actions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 15, 17, 19, 20, 21, 23, 24]
+dqn:
+  num_actions: null
+  learning_rate: 0.0001
+  gamma: 0.99
+  batch_size: 64
+  gradient_clip: 5
+  replay_buffer:
+    capacity: 40000
+    min_size: 4000
+  exploration:
+    epsilon_start: 0.95
+    epsilon_end: 0.05
+    epsilon_decay_steps: 40000
+  target_update:
+    method: "hard"
+    tau: 0.005
+    hard_update_freq: 400
+  prioritized_replay:
+    enabled: true
+    alpha: 0.6
+    beta_start: 0.4
+    beta_end: 1.0
+training:
+  num_episodes: 4000
+  train_freq: 5
+  log_freq: 5
+  save_freq: 50
+  eval_freq: 50
+  eval_episodes: 5
+  grad_cam_freq: 50
+  env_recreation_interval: 25
+  checkpoint_dir: "checkpoints"
+  log_dir: "runs"
+  grad_cam_checkpoint_path: "checkpoints/best_model_dqn.pt"
+  video_recording:
+    enabled: false
+    save_dir: "videos"
+    fps: 10
+ppo:
+  learning_rate: 0.0001
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  n_steps: 1024
+  n_epochs: 6
+  batch_size: 64
+algorithm: "ppo"
+rewards:
+  wood_value: 5.0
+  step_penalty: -0.001
+  axe_reward: 15.0
+  plank_reward: 20.0
+  stick_reward: 10.0
+  waste_penalty: -4.0
+device: "auto"
+seed: null
+grad_cam:
+  attack_action_index: 6
+  output_filename: "grad_cam_visualization.jpg"
